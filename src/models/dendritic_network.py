@@ -1,18 +1,61 @@
+import torch
 import torch.nn as nn
-from .dendritic_layer import DendriticLayer
+import torch.nn.functional as F
+
 
 class DendriticNetwork(nn.Module):
-    """
-    Two dendritic layers + linear output.
-    """
-    def __init__(self, input_dim, hidden_neurons1=8, hidden_neurons2=4,
-                 branches=4, hidden_per_branch=4):
+    def __init__(
+        self,
+        input_dim,
+        hidden_neurons1,
+        hidden_neurons2,
+        branches,
+        hidden_per_branch
+    ):
         super().__init__()
-        self.layer1 = DendriticLayer(input_dim, hidden_neurons1, branches, hidden_per_branch)
-        self.layer2 = DendriticLayer(hidden_neurons1, hidden_neurons2, branches, hidden_per_branch)
+        self.branch_weights = None
+        # Layer 1
+        self.fc1 = nn.Linear(input_dim, hidden_neurons1)
+
+        # Dendritic branches (shared topology)
+        self.branches = nn.ModuleList([
+            nn.Linear(hidden_neurons1, hidden_per_branch)
+            for _ in range(branches)
+        ])
+
+        # Layer 2
+        self.fc2 = nn.Linear(branches * hidden_per_branch, hidden_neurons2)
+
+        # Output layer
         self.out = nn.Linear(hidden_neurons2, 1)
 
+    # ---------------------------------------------------------
+    # REQUIRED FOR PYTORCH
+    # ---------------------------------------------------------
     def forward(self, x):
-        h1 = self.layer1(x)
-        h2 = self.layer2(h1)
-        return self.out(h2).sigmoid()
+
+        # First layer
+        x = F.relu(self.fc1(x))
+
+        # Dendritic branches
+        branch_outputs = []
+        for b in self.branches:
+            branch_outputs.append(F.relu(b(x)))
+
+        # Concatenate branch outputs
+        x = torch.cat(branch_outputs, dim=1)
+
+        # Second layer
+        x = F.relu(self.fc2(x))
+
+        # Output
+        return torch.sigmoid(self.out(x))
+
+    # ---------------------------------------------------------
+    # Size in bytes (for uncompressed model)
+    # ---------------------------------------------------------
+    def size_bytes(self):
+        total = 0
+        for p in self.parameters():
+            total += p.nelement() * p.element_size()
+        return total

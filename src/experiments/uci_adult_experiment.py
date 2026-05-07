@@ -1,8 +1,10 @@
 import torch
+from sklearn.model_selection import train_test_split
+
+from src.data.load_adult import load_adult_income
 from src.training.train import train
 from src.training.evaluate import evaluate
 from src.models.dendritic_network import DendriticNetwork
-from src.data.load_xor import load_xor
 from src.compression.compression_pipeline import (
     compress_model,
     decompress_model,
@@ -10,11 +12,15 @@ from src.compression.compression_pipeline import (
 )
 
 
-def run_xor(epochs=50):
+def run_uci_adult_income(epochs=50):
 
-    # 1. Load XOR dataset
-    X_train, y_train, X_test, y_test = load_xor()
+    # 1. Load dataset
+    X, y = load_adult_income()
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
 
+    # Convert to tensors
     X_train = torch.tensor(X_train, dtype=torch.float32)
     y_train = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1)
     X_test  = torch.tensor(X_test,  dtype=torch.float32)
@@ -22,9 +28,9 @@ def run_xor(epochs=50):
 
     # 2. Build uncompressed model
     model_u = DendriticNetwork(
-        input_dim=2,
-        hidden_neurons1=16,
-        hidden_neurons2=8,
+        input_dim=X_train.shape[1],
+        hidden_neurons1=32,
+        hidden_neurons2=16,
         branches=4,
         hidden_per_branch=4
     )

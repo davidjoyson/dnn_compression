@@ -1,4 +1,4 @@
 #!/bin/bash
-echo "Running Folktables experiments..."
+echo "Start"
 python run_all_experiments.py
 echo "Done."
