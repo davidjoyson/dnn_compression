@@ -18,7 +18,7 @@ def train(model, X, y, epochs=1, lr=1e-3, batch_size=64, use_tqdm=True):
     loss_fn = nn.BCELoss()
 
     model.train()
-    last_loss = None
+    history = []
 
     for epoch in range(epochs):
 
@@ -28,6 +28,8 @@ def train(model, X, y, epochs=1, lr=1e-3, batch_size=64, use_tqdm=True):
         else:
             loop = loader
 
+        epoch_loss = 0.0
+        n_batches = 0
         for xb, yb in loop:
             opt.zero_grad()
             preds = model(xb)
@@ -35,10 +37,12 @@ def train(model, X, y, epochs=1, lr=1e-3, batch_size=64, use_tqdm=True):
             loss.backward()
             opt.step()
 
-            last_loss = loss.detach().item()
+            epoch_loss += loss.detach().item()
+            n_batches += 1
 
-            # Only update progress bar when enabled
             if use_tqdm:
-                loop.set_postfix(loss=last_loss)
+                loop.set_postfix(loss=epoch_loss / n_batches)
 
-    return last_loss
+        history.append(epoch_loss / n_batches if n_batches > 0 else 0.0)
+
+    return history

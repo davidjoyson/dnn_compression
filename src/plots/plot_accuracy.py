@@ -9,7 +9,7 @@ def plot_accuracy(acc_uncompressed, acc_compressed, title="Accuracy Comparison",
     plt.bar(labels, values, color=["steelblue", "orange"])
     plt.ylim(0, 1)
     plt.ylabel("Accuracy")
-    plt.title(title)
+    plt.title(title, pad=12)
 
     for i, v in enumerate(values):
         plt.text(i, v + 0.02, f"{v:.3f}", ha="center")

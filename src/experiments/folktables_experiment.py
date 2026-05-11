@@ -1,6 +1,7 @@
+import copy
 import torch
 from src.training.train import train
-from src.training.evaluate import evaluate
+from src.training.evaluate import evaluate, mse_score, predict_proba
 from src.models.dendritic_network import DendriticNetwork
 from src.data.load_folktables import load_folktables_income
 from src.compression.compression_pipeline import (
@@ -30,8 +31,10 @@ def run_folktables_income(state, year, epochs=50):
     )
 
     # 3. Train uncompressed model
-    train(model_u, X_train, y_train, epochs=epochs)
+    hist_u = train(model_u, X_train, y_train, epochs=epochs)
     acc_u = evaluate(model_u, X_test, y_test)
+    mse_u = mse_score(model_u, X_test, y_test)
+    original_state = copy.deepcopy(model_u.state_dict())
 
     # 4. Compress → returns compressed dict
     compressed = compress_model(model_u)
@@ -40,17 +43,33 @@ def run_folktables_income(state, year, epochs=50):
     # 5. Decompress → returns PyTorch model with restored weights
     model_c = decompress_model(compressed, model_u)
     acc_c = evaluate(model_c, X_test, y_test)
+    mse_c = mse_score(model_c, X_test, y_test)
 
     # 6. Uncompressed size
     size_u = model_u.size_bytes()
+
+    score_c = predict_proba(model_c, X_test)
+    model_u.load_state_dict(original_state)
+    score_u = predict_proba(model_u, X_test)
+    curve_data = {
+        "y_true":               y_test.cpu().numpy().ravel(),
+        "y_score_uncompressed": score_u,
+        "y_score_compressed":   score_c,
+    }
 
     return {
         "accuracy": {
             "uncompressed": acc_u,
             "compressed": acc_c
         },
+        "mse": {
+            "uncompressed": mse_u,
+            "compressed":   mse_c,
+        },
         "sizes": {
             "uncompressed": size_u,
             "compressed": size_c
-        }
+        },
+        "curve_data": curve_data,
+        "loss_history": {"Dendritic (Uncompressed)": hist_u},
     }

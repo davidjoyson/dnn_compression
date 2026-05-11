@@ -1,6 +1,8 @@
 import copy
 import torch
-from src.data.load_wine import load_wine as _load_wine_data
+from sklearn.model_selection import train_test_split
+
+from src.data.load_creditcard import load_creditcard_fraud
 from src.training.train import train
 from src.training.evaluate import evaluate, mse_score, predict_proba
 from src.models.dendritic_network import DendriticNetwork
@@ -12,7 +14,9 @@ from src.compression.compression_pipeline import (
 )
 
 
-def run_wine(epochs=50, seeds=(42,)):
+def run_creditcard_fraud(epochs=50, seeds=(42,)):
+    X_raw, y_raw = load_creditcard_fraud()
+
     acc_u_list, acc_c_list, acc_mlp_list = [], [], []
     mse_u_list, mse_c_list, mse_mlp_list = [], [], []
     size_u, size_c = None, None
@@ -20,16 +24,17 @@ def run_wine(epochs=50, seeds=(42,)):
     loss_history = None
 
     for seed in seeds:
-        X_train, y_train, X_test, y_test = _load_wine_data(seed=seed)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X_raw, y_raw, test_size=0.2, random_state=seed, stratify=y_raw
+        )
 
         X_train = torch.tensor(X_train, dtype=torch.float32)
-        y_train = torch.tensor(y_train, dtype=torch.float32)
+        y_train = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1)
         X_test  = torch.tensor(X_test,  dtype=torch.float32)
-        y_test  = torch.tensor(y_test,  dtype=torch.float32)
+        y_test  = torch.tensor(y_test,  dtype=torch.float32).reshape(-1, 1)
 
         torch.manual_seed(seed)
 
-        # Dendritic model — uncompressed
         model_u = DendriticNetwork(
             input_dim=X_train.shape[1],
             hidden_neurons1=32,
@@ -42,8 +47,6 @@ def run_wine(epochs=50, seeds=(42,)):
         mse_u_list.append(mse_score(model_u, X_test, y_test))
 
         original_state = copy.deepcopy(model_u.state_dict())
-
-        # Compress with fine-tuning, then evaluate
         compressed = compress_model(model_u, fine_tune_data=(X_train, y_train))
         decompress_model(compressed, model_u)
         acc_c_list.append(evaluate(model_u, X_test, y_test))
@@ -53,18 +56,18 @@ def run_wine(epochs=50, seeds=(42,)):
             size_u = model_u.size_bytes()
             size_c = compressed_size_bytes(compressed)
 
+        # Capture probabilities from the first seed for curve plots
         if curve_data is None:
             model_u.load_state_dict(original_state)
             score_u = predict_proba(model_u, X_test)
             decompress_model(compressed, model_u)
             score_c = predict_proba(model_u, X_test)
             curve_data = {
-                "y_true":               y_test.cpu().numpy().ravel(),
+                "y_true":              y_test.cpu().numpy().ravel(),
                 "y_score_uncompressed": score_u,
                 "y_score_compressed":   score_c,
             }
 
-        # MLP baseline (comparable hidden size)
         mlp = MLPBaseline(input_dim=X_train.shape[1], hidden=32)
         hist_mlp = train(mlp, X_train, y_train, epochs=epochs)
         acc_mlp_list.append(evaluate(mlp, X_test, y_test))
@@ -78,11 +81,8 @@ def run_wine(epochs=50, seeds=(42,)):
 
     n = len(seeds)
 
-    def _mean(lst):
-        return float(sum(lst) / n)
-
-    def _std(lst):
-        return float(torch.tensor(lst).std().item()) if n > 1 else 0.0
+    def _mean(lst): return float(sum(lst) / n)
+    def _std(lst):  return float(torch.tensor(lst).std().item()) if n > 1 else 0.0
 
     return {
         "accuracy": {

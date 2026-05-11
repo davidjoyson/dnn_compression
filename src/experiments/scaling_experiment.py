@@ -1,8 +1,9 @@
+import time
 import torch
 from tqdm import tqdm
 
 from src.training.train import train
-from src.training.evaluate import evaluate
+from src.training.evaluate import evaluate, mse_score
 from src.models.dendritic_network import DendriticNetwork
 from src.compression.compression_pipeline import (
     compress_model,
@@ -48,10 +49,13 @@ def run_scaling_experiment(
     B = len(neurons2_list)
     C = len(branches_list)
 
-    acc_u = torch.zeros((A, B, C))
-    acc_c = torch.zeros((A, B, C))
-    size_u = torch.zeros((A, B, C))
-    size_c = torch.zeros((A, B, C))
+    acc_u    = torch.zeros((A, B, C))
+    acc_c    = torch.zeros((A, B, C))
+    mse_u    = torch.zeros((A, B, C))
+    mse_c    = torch.zeros((A, B, C))
+    size_u   = torch.zeros((A, B, C))
+    size_c   = torch.zeros((A, B, C))
+    time_sec = torch.zeros((A, B, C))
 
     total = A * B * C
     pbar = tqdm(total=total, desc="Scaling Experiment", colour="white")
@@ -61,6 +65,7 @@ def run_scaling_experiment(
     for i, h1 in enumerate(neurons1_list):
         for j, h2 in enumerate(neurons2_list):
             for k, br in enumerate(branches_list):
+                _t0 = time.time()
 
                 # -------------------------
                 # 1. Build model
@@ -78,6 +83,7 @@ def run_scaling_experiment(
                 # -------------------------
                 train(model_u, X_train, y_train, epochs=epochs)
                 acc_un = evaluate(model_u, X_test, y_test)
+                mse_un = mse_score(model_u, X_test, y_test)
 
                 # -------------------------
                 # 3. Compress → dict
@@ -90,6 +96,7 @@ def run_scaling_experiment(
                 # -------------------------
                 model_c = decompress_model(compressed, model_u)
                 acc_com = evaluate(model_c, X_test, y_test)
+                mse_com = mse_score(model_c, X_test, y_test)
 
                 # -------------------------
                 # 5. Uncompressed size
@@ -99,10 +106,13 @@ def run_scaling_experiment(
                 # -------------------------
                 # 6. Store results
                 # -------------------------
-                acc_u[i, j, k] = acc_un
-                acc_c[i, j, k] = acc_com
-                size_u[i, j, k] = size_un
-                size_c[i, j, k] = size_com
+                acc_u[i, j, k]    = acc_un
+                acc_c[i, j, k]    = acc_com
+                mse_u[i, j, k]    = mse_un
+                mse_c[i, j, k]    = mse_com
+                size_u[i, j, k]   = size_un
+                size_c[i, j, k]   = size_com
+                time_sec[i, j, k] = time.time() - _t0
 
                 # -------------------------
                 # 7. Progress bar update
@@ -120,7 +130,10 @@ def run_scaling_experiment(
 
     return {
         "accuracy_uncompressed": acc_u,
-        "accuracy_compressed": acc_c,
-        "size_uncompressed": size_u,
-        "size_compressed": size_c
+        "accuracy_compressed":   acc_c,
+        "mse_uncompressed":      mse_u,
+        "mse_compressed":        mse_c,
+        "size_uncompressed":     size_u,
+        "size_compressed":       size_c,
+        "time_per_config":       time_sec,
     }
