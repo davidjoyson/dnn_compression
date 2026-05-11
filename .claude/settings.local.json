@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(Get-ChildItem -Path \"d:\\\\PythonProjects\\\\UE_projects\\\\dnn_compression\" -Force)"
-    ]
-  }
-}
