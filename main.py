@@ -1,5 +1,11 @@
 import argparse
+import csv
+import io
+import math
+import os
 import time
+from datetime import datetime
+
 import torch
 from tqdm import tqdm
 
@@ -13,6 +19,11 @@ from src.experiments.creditcard_experiment import run_creditcard_fraud
 
 from src.data.load_adult import load_adult_income
 from src.data.load_wine import load_wine
+
+from src.models.dendritic_network import DendriticNetwork
+from src.models.mlp_baseline import MLPBaseline
+
+import src.plots.save_utils as _save_utils
 
 from src.plots.plot_accuracy import plot_accuracy
 from src.plots.plot_compression import plot_compression
@@ -52,20 +63,107 @@ def _store_simple(results, timings, name, out, elapsed):
         "std_uncompressed": _to_float(out.get("accuracy_std", {}).get("uncompressed", 0.0)),
         "std_compressed":   _to_float(out.get("accuracy_std", {}).get("compressed",   0.0)),
         "std_mlp_baseline": _to_float(out.get("accuracy_std", {}).get("mlp_baseline", 0.0)),
-        "size_uncompressed": out["sizes"]["uncompressed"],
-        "size_compressed":   out["sizes"]["compressed"],
+        "size_uncompressed":     out["sizes"]["uncompressed"],
+        "size_compressed":       out["sizes"]["compressed"],
+        "size_mlp_uncompressed": out["sizes"].get("mlp_uncompressed"),
+        "size_mlp_compressed":   out["sizes"].get("mlp_compressed"),
         "time_seconds": elapsed,
         "mse_uncompressed":     _to_float(out.get("mse", {}).get("uncompressed", float("nan"))),
         "mse_compressed":       _to_float(out.get("mse", {}).get("compressed",   float("nan"))),
         "mse_mlp_baseline":     _to_float(out.get("mse", {}).get("mlp_baseline", float("nan"))),
-        "mse_std_uncompressed": _to_float(out.get("mse_std", {}).get("uncompressed", 0.0)),
-        "mse_std_compressed":   _to_float(out.get("mse_std", {}).get("compressed",   0.0)),
-        "mse_std_mlp_baseline": _to_float(out.get("mse_std", {}).get("mlp_baseline", 0.0)),
+        "mse_std_uncompressed":   _to_float(out.get("mse_std", {}).get("uncompressed",   0.0)),
+        "mse_std_compressed":     _to_float(out.get("mse_std", {}).get("compressed",     0.0)),
+        "mse_std_mlp_baseline":   _to_float(out.get("mse_std", {}).get("mlp_baseline",   0.0)),
+        "mse_std_mlp_compressed": _to_float(out.get("mse_std", {}).get("mlp_compressed", 0.0)),
+        "accuracy_mlp_compressed": _to_float(out["accuracy"].get("mlp_compressed", float("nan"))),
+        "std_mlp_compressed":      _to_float(out.get("accuracy_std", {}).get("mlp_compressed", 0.0)),
+        "mse_mlp_compressed":      _to_float(out.get("mse", {}).get("mlp_compressed", float("nan"))),
         "num_seeds": out.get("num_seeds", 1),
         "curve_data": out.get("curve_data"),
         "loss_history": out.get("loss_history"),
     }
     timings[name] = elapsed
+
+
+# ------------------------------------------------------------------ #
+# Run directory + output helpers                                      #
+# ------------------------------------------------------------------ #
+
+def _make_run_dir():
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = os.path.join("outputs", f"run_{stamp}")
+    os.makedirs(os.path.join(run_dir, "figures"), exist_ok=True)
+    return run_dir
+
+
+def _save_metrics_csv(results, run_dir):
+    rows = []
+    for name, r in results.items():
+        if not isinstance(r, dict) or "accuracy_uncompressed" not in r:
+            continue
+        _acc_check = r["accuracy_uncompressed"]
+        if isinstance(_acc_check, list) or (hasattr(_acc_check, "numel") and _acc_check.numel() > 1):
+            continue  # multi-value result (Scaling Experiment, Folktables Multi-State) — not a flat row
+        acc_u   = _to_float(r.get("accuracy_uncompressed",   float("nan")))
+        acc_c   = _to_float(r.get("accuracy_compressed",     float("nan")))
+        acc_mlp = _to_float(r.get("accuracy_mlp_baseline",   float("nan")))
+        acc_mlp_c = _to_float(r.get("accuracy_mlp_compressed", float("nan")))
+
+        def _delta(a, b):
+            return round(a - b, 6) if not (math.isnan(a) or math.isnan(b)) else ""
+
+        def _ratio(u, c):
+            return round(u / c, 3) if c and not math.isnan(u) else ""
+
+        rows.append({
+            "experiment":              name,
+            "acc_uncompressed":        round(acc_u,   6),
+            "acc_compressed":          round(acc_c,   6),
+            "acc_mlp_baseline":        round(acc_mlp, 6) if not math.isnan(acc_mlp) else "",
+            "acc_mlp_compressed":      round(acc_mlp_c, 6) if not math.isnan(acc_mlp_c) else "",
+            "acc_delta_dendritic":     _delta(acc_c,     acc_u),
+            "acc_delta_mlp":           _delta(acc_mlp_c, acc_mlp),
+            "std_uncompressed":        r.get("std_uncompressed",   0.0),
+            "std_compressed":          r.get("std_compressed",     0.0),
+            "std_mlp_baseline":        r.get("std_mlp_baseline",   0.0),
+            "std_mlp_compressed":      r.get("std_mlp_compressed", 0.0),
+            "mse_uncompressed":        r.get("mse_uncompressed",   ""),
+            "mse_compressed":          r.get("mse_compressed",     ""),
+            "mse_mlp_baseline":        r.get("mse_mlp_baseline",   ""),
+            "mse_mlp_compressed":      r.get("mse_mlp_compressed", ""),
+            "size_dendritic_u":        r.get("size_uncompressed",     ""),
+            "size_dendritic_c":        r.get("size_compressed",       ""),
+            "compression_ratio_dendritic": _ratio(r.get("size_uncompressed", float("nan")),
+                                                   r.get("size_compressed",   float("nan"))),
+            "size_mlp_u":              r.get("size_mlp_uncompressed", ""),
+            "size_mlp_c":              r.get("size_mlp_compressed",   ""),
+            "compression_ratio_mlp":   _ratio(r.get("size_mlp_uncompressed", float("nan")),
+                                               r.get("size_mlp_compressed",   float("nan"))),
+            "time_seconds":            round(r.get("time_seconds", 0.0), 2),
+            "num_seeds":               r.get("num_seeds", 1),
+        })
+
+    if not rows:
+        return
+    csv_path = os.path.join(run_dir, "metrics.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"  Metrics saved -> {csv_path}")
+
+
+def _save_summary_txt(results, timings, run_dir):
+    buf = io.StringIO()
+    import sys
+    old_stdout = sys.stdout
+    sys.stdout = buf
+    _print_summary(results, timings)
+    sys.stdout = old_stdout
+    txt_path = os.path.join(run_dir, "summary.txt")
+    with open(txt_path, "w", encoding="utf-8") as f:
+        f.write(buf.getvalue())
+    print(f"  Summary saved  -> {txt_path}")
 
 
 # ------------------------------------------------------------------ #
@@ -252,14 +350,28 @@ def _print_summary(results, timings):
         print(f"{name}{seed_note}:")
         print(f"  Uncompressed Acc : {acc_u:.4f} +/- {std_u:.4f}")
         print(f"  Compressed Acc   : {acc_c:.4f} +/- {std_c:.4f}")
+        acc_mlp_c   = _to_float(r.get("accuracy_mlp_compressed", float("nan")))
+        std_mlp_c   = _to_float(r.get("std_mlp_compressed",      0.0))
+        mse_mlp_c   = _to_float(r.get("mse_mlp_compressed",      float("nan")))
+        std_mse_mlp_c = _to_float(r.get("mse_std_mlp_compressed", 0.0))
+
         if acc_mlp == acc_mlp:
             print(f"  MLP Baseline Acc : {acc_mlp:.4f} +/- {std_mlp:.4f}")
+        if acc_mlp_c == acc_mlp_c:
+            delta_d   = acc_c   - acc_u
+            delta_mlp = acc_mlp_c - acc_mlp
+            print(f"  MLP Compressed   : {acc_mlp_c:.4f} +/- {std_mlp_c:.4f}")
+            print(f"  -- Acc delta (Dendritic): {delta_d:+.4f}  |  MLP: {delta_mlp:+.4f}")
         if mse_u == mse_u:
             print(f"  Uncompressed MSE : {mse_u:.4f} +/- {std_mse_u:.4f}")
             print(f"  Compressed MSE   : {mse_c:.4f} +/- {std_mse_c:.4f}")
         if mse_mlp == mse_mlp:
             print(f"  MLP Baseline MSE : {mse_mlp:.4f} +/- {std_mse_mlp:.4f}")
-        print(f"  Size (U -> C)    : {r['size_uncompressed']} -> {r['size_compressed']} bytes")
+        if mse_mlp_c == mse_mlp_c:
+            print(f"  MLP Compressed MSE:{mse_mlp_c:.4f} +/- {std_mse_mlp_c:.4f}")
+        print(f"  Dendritic Size   : {r['size_uncompressed']} -> {r['size_compressed']} bytes")
+        if r.get("size_mlp_uncompressed") is not None:
+            print(f"  MLP Size         : {r['size_mlp_uncompressed']} -> {r['size_mlp_compressed']} bytes")
         print(time_str, end="")
 
 
@@ -379,9 +491,31 @@ def main():
         default=EPOCHS,
         help=f"Training epochs per experiment (default: {EPOCHS})",
     )
+    parser.add_argument(
+        "--arch",
+        action="store_true",
+        help="Print model architectures and exit",
+    )
     args = parser.parse_args()
 
-    print(f"\n=== Running: {', '.join(args.exp)} | epochs={args.epochs} ===\n")
+    if args.arch:
+        import sys
+        from torchinfo import summary
+        sys.stdout.reconfigure(encoding="utf-8")
+        input_dim = 30
+        dendritic = DendriticNetwork(input_dim=input_dim, hidden_neurons1=32, hidden_neurons2=16, branches=4, hidden_per_branch=4)
+        mlp       = MLPBaseline(input_dim=input_dim, hidden=32)
+        print("\n=== DendriticNetwork ===")
+        summary(dendritic, input_size=(1, input_dim))
+        print(f"Size: {dendritic.size_bytes():,} bytes")
+        print("\n=== MLPBaseline ===")
+        summary(mlp, input_size=(1, input_dim))
+        return
+
+    run_dir = _make_run_dir()
+    _save_utils.set_fig_dir(os.path.join(run_dir, "figures"))
+    print(f"\n=== Running: {', '.join(args.exp)} | epochs={args.epochs} ===")
+    print(f"    Output dir: {run_dir}\n")
 
     results = {}
     timings = {}
@@ -395,6 +529,8 @@ def main():
 
     _print_summary(results, timings)
     _generate_plots(results)
+    _save_metrics_csv(results, run_dir)
+    _save_summary_txt(results, timings, run_dir)
 
     return results
 

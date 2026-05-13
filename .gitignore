@@ -6,6 +6,7 @@ data/
 
 # Figures and outputs
 figures/
+outputs/
 *.png
 *.jpg
 *.pdf

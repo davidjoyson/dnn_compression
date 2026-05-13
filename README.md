@@ -39,7 +39,6 @@ dnn_compression/
 ├── src/
 │   ├── models/
 │   │   ├── dendritic_network.py     # DendriticNetwork (main model)
-│   │   ├── dendritic_neuron.py      # Single dendritic neuron module
 │   │   └── mlp_baseline.py          # MLP baseline for comparison
 │   │
 │   ├── compression/

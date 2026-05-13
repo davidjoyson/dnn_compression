@@ -12,3 +12,6 @@ class MLPBaseline(nn.Module):
 
     def forward(self, x):
         return self.net(x)
+
+    def size_bytes(self):
+        return sum(p.nelement() * p.element_size() for p in self.parameters())

@@ -17,9 +17,10 @@ from src.compression.compression_pipeline import (
 def run_creditcard_fraud(epochs=50, seeds=(42,)):
     X_raw, y_raw = load_creditcard_fraud()
 
-    acc_u_list, acc_c_list, acc_mlp_list = [], [], []
-    mse_u_list, mse_c_list, mse_mlp_list = [], [], []
+    acc_u_list, acc_c_list, acc_mlp_list, acc_mlp_c_list = [], [], [], []
+    mse_u_list, mse_c_list, mse_mlp_list, mse_mlp_c_list = [], [], [], []
     size_u, size_c = None, None
+    size_mlp_u, size_mlp_c = None, None
     curve_data = None
     loss_history = None
 
@@ -73,6 +74,15 @@ def run_creditcard_fraud(epochs=50, seeds=(42,)):
         acc_mlp_list.append(evaluate(mlp, X_test, y_test))
         mse_mlp_list.append(mse_score(mlp, X_test, y_test))
 
+        compressed_mlp = compress_model(mlp, fine_tune_data=(X_train, y_train))
+        decompress_model(compressed_mlp, mlp)
+        acc_mlp_c_list.append(evaluate(mlp, X_test, y_test))
+        mse_mlp_c_list.append(mse_score(mlp, X_test, y_test))
+
+        if size_mlp_u is None:
+            size_mlp_u = mlp.size_bytes()
+            size_mlp_c = compressed_size_bytes(compressed_mlp)
+
         if loss_history is None:
             loss_history = {
                 "Dendritic (Uncompressed)": hist_u,
@@ -86,28 +96,34 @@ def run_creditcard_fraud(epochs=50, seeds=(42,)):
 
     return {
         "accuracy": {
-            "uncompressed": _mean(acc_u_list),
-            "compressed":   _mean(acc_c_list),
-            "mlp_baseline": _mean(acc_mlp_list),
+            "uncompressed":   _mean(acc_u_list),
+            "compressed":     _mean(acc_c_list),
+            "mlp_baseline":   _mean(acc_mlp_list),
+            "mlp_compressed": _mean(acc_mlp_c_list),
         },
         "accuracy_std": {
-            "uncompressed": _std(acc_u_list),
-            "compressed":   _std(acc_c_list),
-            "mlp_baseline": _std(acc_mlp_list),
+            "uncompressed":   _std(acc_u_list),
+            "compressed":     _std(acc_c_list),
+            "mlp_baseline":   _std(acc_mlp_list),
+            "mlp_compressed": _std(acc_mlp_c_list),
         },
         "mse": {
-            "uncompressed": _mean(mse_u_list),
-            "compressed":   _mean(mse_c_list),
-            "mlp_baseline": _mean(mse_mlp_list),
+            "uncompressed":   _mean(mse_u_list),
+            "compressed":     _mean(mse_c_list),
+            "mlp_baseline":   _mean(mse_mlp_list),
+            "mlp_compressed": _mean(mse_mlp_c_list),
         },
         "mse_std": {
-            "uncompressed": _std(mse_u_list),
-            "compressed":   _std(mse_c_list),
-            "mlp_baseline": _std(mse_mlp_list),
+            "uncompressed":   _std(mse_u_list),
+            "compressed":     _std(mse_c_list),
+            "mlp_baseline":   _std(mse_mlp_list),
+            "mlp_compressed": _std(mse_mlp_c_list),
         },
         "sizes": {
-            "uncompressed": size_u,
-            "compressed":   size_c,
+            "uncompressed":     size_u,
+            "compressed":       size_c,
+            "mlp_uncompressed": size_mlp_u,
+            "mlp_compressed":   size_mlp_c,
         },
         "num_seeds": n,
         "curve_data": curve_data,
