@@ -1,10 +1,12 @@
 import copy
 import torch
+from sklearn.model_selection import train_test_split
+
 from src.training.train import train
 from src.training.evaluate import evaluate, mse_score, predict_proba
 from src.models.dendritic_network import DendriticNetwork
 from src.models.mlp_baseline import MLPBaseline
-from src.data.load_folktables import load_folktables_income
+from src.loaders.load_folktables import load_folktables_income
 from src.compression.compression_pipeline import (
     compress_model,
     decompress_model,
@@ -14,13 +16,19 @@ from src.compression.compression_pipeline import (
 
 def run_folktables_income(state, year, epochs=50):
 
-    # 1. Load data
-    X_train, y_train, X_test, y_test = load_folktables_income(state, year)
+    # 1. Load data and carve out validation split
+    X_tr_raw, y_tr_raw, X_test_raw, y_test_raw = load_folktables_income(state, year)
 
-    X_train = torch.tensor(X_train, dtype=torch.float32)
-    y_train = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1)
-    X_test  = torch.tensor(X_test,  dtype=torch.float32)
-    y_test  = torch.tensor(y_test,  dtype=torch.float32).reshape(-1, 1)
+    X_train_np, X_val_np, y_train_np, y_val_np = train_test_split(
+        X_tr_raw, y_tr_raw, test_size=0.1, random_state=42
+    )
+
+    X_train = torch.tensor(X_train_np, dtype=torch.float32)
+    y_train = torch.tensor(y_train_np, dtype=torch.float32).reshape(-1, 1)
+    X_val   = torch.tensor(X_val_np,   dtype=torch.float32)
+    y_val   = torch.tensor(y_val_np,   dtype=torch.float32).reshape(-1, 1)
+    X_test  = torch.tensor(X_test_raw, dtype=torch.float32)
+    y_test  = torch.tensor(y_test_raw, dtype=torch.float32).reshape(-1, 1)
 
     # 2. Build model
     model_u = DendriticNetwork(
@@ -32,7 +40,8 @@ def run_folktables_income(state, year, epochs=50):
     )
 
     # 3. Train uncompressed model
-    hist_u = train(model_u, X_train, y_train, epochs=epochs)
+    hist_u, val_hist_u = train(model_u, X_train, y_train, epochs=epochs,
+                               X_val=X_val, y_val=y_val)
     acc_u = evaluate(model_u, X_test, y_test)
     mse_u = mse_score(model_u, X_test, y_test)
     original_state = copy.deepcopy(model_u.state_dict())
@@ -50,7 +59,8 @@ def run_folktables_income(state, year, epochs=50):
     size_u = model_u.size_bytes()
 
     mlp = MLPBaseline(input_dim=X_train.shape[1], hidden=32)
-    hist_mlp = train(mlp, X_train, y_train, epochs=epochs)
+    hist_mlp, val_hist_mlp = train(mlp, X_train, y_train, epochs=epochs,
+                                   X_val=X_val, y_val=y_val)
     acc_mlp = evaluate(mlp, X_test, y_test)
     mse_mlp = mse_score(mlp, X_test, y_test)
 
@@ -92,6 +102,8 @@ def run_folktables_income(state, year, epochs=50):
         "curve_data": curve_data,
         "loss_history": {
             "Dendritic (Uncompressed)": hist_u,
+            "Dendritic (Val)":          val_hist_u,
             "MLP Baseline":             hist_mlp,
+            "MLP (Val)":                val_hist_mlp,
         },
     }

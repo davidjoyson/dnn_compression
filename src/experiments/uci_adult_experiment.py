@@ -2,7 +2,7 @@ import copy
 import torch
 from sklearn.model_selection import train_test_split
 
-from src.data.load_adult import load_adult_income
+from src.loaders.load_adult import load_adult_income
 from src.training.train import train
 from src.training.evaluate import evaluate, mse_score, predict_proba
 from src.models.dendritic_network import DendriticNetwork
@@ -14,7 +14,7 @@ from src.compression.compression_pipeline import (
 )
 
 
-def run_uci_adult_income(epochs=50, seeds=(42,)):
+def run_uci_adult_income(epochs=50, seeds=(42,), fine_tune_epochs=3):
     X_raw, y_raw = load_adult_income()
 
     acc_u_list, acc_c_list, acc_mlp_list, acc_mlp_c_list = [], [], [], []
@@ -25,12 +25,17 @@ def run_uci_adult_income(epochs=50, seeds=(42,)):
     loss_history = None
 
     for seed in seeds:
-        X_train, X_test, y_train, y_test = train_test_split(
+        X_tr, X_test, y_tr, y_test = train_test_split(
             X_raw, y_raw, test_size=0.2, random_state=seed
+        )
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_tr, y_tr, test_size=0.1, random_state=seed
         )
 
         X_train = torch.tensor(X_train, dtype=torch.float32)
         y_train = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1)
+        X_val   = torch.tensor(X_val,   dtype=torch.float32)
+        y_val   = torch.tensor(y_val,   dtype=torch.float32).reshape(-1, 1)
         X_test  = torch.tensor(X_test,  dtype=torch.float32)
         y_test  = torch.tensor(y_test,  dtype=torch.float32).reshape(-1, 1)
 
@@ -44,14 +49,15 @@ def run_uci_adult_income(epochs=50, seeds=(42,)):
             branches=4,
             hidden_per_branch=4,
         )
-        hist_u = train(model_u, X_train, y_train, epochs=epochs)
+        hist_u, val_hist_u = train(model_u, X_train, y_train, epochs=epochs,
+                                   X_val=X_val, y_val=y_val)
         acc_u_list.append(evaluate(model_u, X_test, y_test))
         mse_u_list.append(mse_score(model_u, X_test, y_test))
 
         original_state = copy.deepcopy(model_u.state_dict())
 
-        # Compress with fine-tuning, then evaluate
-        compressed = compress_model(model_u, fine_tune_data=(X_train, y_train))
+        compressed = compress_model(model_u, fine_tune_data=(X_train, y_train),
+                                    fine_tune_epochs=fine_tune_epochs)
         decompress_model(compressed, model_u)
         acc_c_list.append(evaluate(model_u, X_test, y_test))
         mse_c_list.append(mse_score(model_u, X_test, y_test))
@@ -73,11 +79,13 @@ def run_uci_adult_income(epochs=50, seeds=(42,)):
 
         # MLP baseline — uncompressed then compressed
         mlp = MLPBaseline(input_dim=X_train.shape[1], hidden=32)
-        hist_mlp = train(mlp, X_train, y_train, epochs=epochs)
+        hist_mlp, val_hist_mlp = train(mlp, X_train, y_train, epochs=epochs,
+                                       X_val=X_val, y_val=y_val)
         acc_mlp_list.append(evaluate(mlp, X_test, y_test))
         mse_mlp_list.append(mse_score(mlp, X_test, y_test))
 
-        compressed_mlp = compress_model(mlp, fine_tune_data=(X_train, y_train))
+        compressed_mlp = compress_model(mlp, fine_tune_data=(X_train, y_train),
+                                        fine_tune_epochs=fine_tune_epochs)
         decompress_model(compressed_mlp, mlp)
         acc_mlp_c_list.append(evaluate(mlp, X_test, y_test))
         mse_mlp_c_list.append(mse_score(mlp, X_test, y_test))
@@ -89,7 +97,9 @@ def run_uci_adult_income(epochs=50, seeds=(42,)):
         if loss_history is None:
             loss_history = {
                 "Dendritic (Uncompressed)": hist_u,
+                "Dendritic (Val)":          val_hist_u,
                 "MLP Baseline":             hist_mlp,
+                "MLP (Val)":                val_hist_mlp,
             }
 
     n = len(seeds)
