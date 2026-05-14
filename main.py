@@ -32,8 +32,8 @@ SEEDS  = (42, 0, 7)
 EPOCHS = 50
 
 ALL_EXPERIMENTS = [
-    "adult", "folktables",
-    "ablation", "component", "scaling",
+    # "adult", "folktables",
+    "ablation", "component",  # "scaling",
     "har",
 ]
 
@@ -112,8 +112,8 @@ REGISTRY = {
     "folktables": _run_folktables,
     "ablation":   _run_ablation,
     "component":  _run_component,
-    "scaling":    _run_scaling,
-    "har":        _run_har,
+    "scaling":     _run_scaling,
+    "har":         _run_har,
 }
 
 # ------------------------------------------------------------------ #
@@ -142,7 +142,7 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")
         input_dim = 30
         dendritic = DendriticNetwork(input_dim=input_dim, hidden_neurons1=32, hidden_neurons2=16, branches=4, hidden_per_branch=4)
-        mlp       = MLPBaseline(input_dim=input_dim, hidden=32)
+        mlp = MLPBaseline(input_dim=input_dim, match_params=sum(p.numel() for p in dendritic.parameters()))
         print("\n=== DendriticNetwork ===")
         summary(dendritic, input_size=(1, input_dim))
         print(f"Size: {dendritic.size_bytes():,} bytes")

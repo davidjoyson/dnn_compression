@@ -78,7 +78,7 @@ def run_uci_adult_income(epochs=50, seeds=(42,), fine_tune_epochs=3):
             }
 
         # MLP baseline — uncompressed then compressed
-        mlp = MLPBaseline(input_dim=X_train.shape[1], hidden=32)
+        mlp = MLPBaseline(input_dim=X_train.shape[1], match_params=sum(p.numel() for p in model_u.parameters()))
         hist_mlp, val_hist_mlp = train(mlp, X_train, y_train, epochs=epochs,
                                        X_val=X_val, y_val=y_val)
         acc_mlp_list.append(evaluate(mlp, X_test, y_test))

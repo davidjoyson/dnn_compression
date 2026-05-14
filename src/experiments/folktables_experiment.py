@@ -58,7 +58,7 @@ def run_folktables_income(state, year, epochs=50):
     # 6. Uncompressed size
     size_u = model_u.size_bytes()
 
-    mlp = MLPBaseline(input_dim=X_train.shape[1], hidden=32)
+    mlp = MLPBaseline(input_dim=X_train.shape[1], match_params=sum(p.numel() for p in model_u.parameters()))
     hist_mlp, val_hist_mlp = train(mlp, X_train, y_train, epochs=epochs,
                                    X_val=X_val, y_val=y_val)
     acc_mlp = evaluate(mlp, X_test, y_test)

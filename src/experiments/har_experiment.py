@@ -73,7 +73,7 @@ def run_har(epochs=50, seeds=(42,), fine_tune_epochs=3):
                 "y_score_compressed":   score_c,
             }
 
-        mlp = MLPBaseline(input_dim=X_train.shape[1], hidden=64)
+        mlp = MLPBaseline(input_dim=X_train.shape[1], match_params=sum(p.numel() for p in model_u.parameters()))
         hist_mlp, val_hist_mlp = train(mlp, X_train, y_train, epochs=epochs,
                                        X_val=X_val, y_val=y_val)
         acc_mlp_list.append(evaluate(mlp, X_test, y_test))

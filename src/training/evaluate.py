@@ -1,5 +1,10 @@
 import torch
 
+
+def count_params(model):
+    return sum(p.numel() for p in model.parameters())
+
+
 def evaluate(model, X, y, device=None):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
