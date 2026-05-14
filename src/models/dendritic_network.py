@@ -23,8 +23,11 @@ class DendriticNetwork(nn.Module):
             for _ in range(branches)
         ])
 
+        # Soma: collapses each branch's hidden_per_branch activations → one signal per branch
+        self.soma = nn.Linear(branches * hidden_per_branch, branches)
+
         # Layer 2
-        self.fc2 = nn.Linear(branches * hidden_per_branch, hidden_neurons2)
+        self.fc2 = nn.Linear(branches, hidden_neurons2)
 
         # Output layer
         self.out = nn.Linear(hidden_neurons2, 1)
@@ -44,6 +47,9 @@ class DendriticNetwork(nn.Module):
 
         # Concatenate branch outputs
         x = torch.cat(branch_outputs, dim=1)
+
+        # Soma: one integrated signal per branch
+        x = F.relu(self.soma(x))
 
         # Second layer
         x = F.relu(self.fc2(x))
