@@ -12,10 +12,12 @@ class DendriticNetwork(nn.Module):
         branches,
         hidden_per_branch,
         use_soma=True,
+        num_classes=1,
     ):
         super().__init__()
         self.branch_weights = None
         self.use_soma = use_soma
+        self.num_classes = num_classes
         # Layer 1
         self.fc1 = nn.Linear(input_dim, hidden_neurons1)
 
@@ -33,7 +35,7 @@ class DendriticNetwork(nn.Module):
         self.fc2 = nn.Linear(fc2_in, hidden_neurons2)
 
         # Output layer
-        self.out = nn.Linear(hidden_neurons2, 1)
+        self.out = nn.Linear(hidden_neurons2, max(1, num_classes))
 
     # ---------------------------------------------------------
     # REQUIRED FOR PYTORCH
@@ -59,7 +61,10 @@ class DendriticNetwork(nn.Module):
         x = F.relu(self.fc2(x))
 
         # Output
-        return torch.sigmoid(self.out(x))
+        x = self.out(x)
+        if self.num_classes == 1:
+            return torch.sigmoid(x)
+        return x  # raw logits for CrossEntropyLoss
 
     # ---------------------------------------------------------
     # Size in bytes (for uncompressed model)

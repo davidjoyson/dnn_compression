@@ -134,6 +134,10 @@ def print_summary(results, timings):
         std_mlp = to_float(r.get("std_mlp_baseline",  0.0))
         acc_mlp_c     = to_float(r.get("accuracy_mlp_compressed", float("nan")))
         std_mlp_c     = to_float(r.get("std_mlp_compressed",      0.0))
+        acc_global   = to_float(r.get("accuracy_compressed_global",  float("nan")))
+        std_global   = to_float(r.get("std_compressed_global",       0.0))
+        acc_dynamic  = to_float(r.get("accuracy_compressed_dynamic", float("nan")))
+        std_dynamic  = to_float(r.get("std_compressed_dynamic",      0.0))
         mse_u         = to_float(r.get("mse_uncompressed",     float("nan")))
         mse_c         = to_float(r.get("mse_compressed",       float("nan")))
         mse_mlp       = to_float(r.get("mse_mlp_baseline",     float("nan")))
@@ -148,12 +152,17 @@ def print_summary(results, timings):
 
         print(f"{name}{seed_note}:")
         print(f"  Uncompressed Acc : {acc_u:.4f} +/- {std_u:.4f}")
-        print(f"  Compressed Acc   : {acc_c:.4f} +/- {std_c:.4f}")
+        print(f"  Snowflake (int8) : {acc_c:.4f} +/- {std_c:.4f}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed','?')} bytes]")
+        if acc_global == acc_global:
+            print(f"  Global int8      : {acc_global:.4f} +/- {std_global:.4f}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_global','?')} bytes]")
+        if acc_dynamic == acc_dynamic:
+            print(f"  Dynamic (int8)   : {acc_dynamic:.4f} +/- {std_dynamic:.4f}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_dynamic','?')} bytes]")
+        if acc_global == acc_global and acc_dynamic == acc_dynamic:
+            print(f"  -- Compression delta: Snowflake={acc_c - acc_u:+.4f} | Global={acc_global - acc_u:+.4f} | Dynamic={acc_dynamic - acc_u:+.4f}")
         if acc_mlp == acc_mlp:
             print(f"  MLP Baseline Acc : {acc_mlp:.4f} +/- {std_mlp:.4f}")
         if acc_mlp_c == acc_mlp_c:
             print(f"  MLP Compressed   : {acc_mlp_c:.4f} +/- {std_mlp_c:.4f}")
-            print(f"  -- Acc delta (Dendritic): {acc_c - acc_u:+.4f}  |  MLP: {acc_mlp_c - acc_mlp:+.4f}")
         if mse_u == mse_u:
             print(f"  Uncompressed MSE : {mse_u:.4f} +/- {std_mse_u:.4f}")
             print(f"  Compressed MSE   : {mse_c:.4f} +/- {std_mse_c:.4f}")
@@ -161,7 +170,6 @@ def print_summary(results, timings):
             print(f"  MLP Baseline MSE : {mse_mlp:.4f} +/- {std_mse_mlp:.4f}")
         if mse_mlp_c == mse_mlp_c:
             print(f"  MLP Compressed MSE:{mse_mlp_c:.4f} +/- {std_mse_mlp_c:.4f}")
-        print(f"  Dendritic Size   : {r['size_uncompressed']} -> {r['size_compressed']} bytes")
         if r.get("size_mlp_uncompressed") is not None:
             print(f"  MLP Size         : {r['size_mlp_uncompressed']} -> {r['size_mlp_compressed']} bytes")
         print(time_str, end="")

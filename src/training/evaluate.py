@@ -5,7 +5,7 @@ def count_params(model):
     return sum(p.numel() for p in model.parameters())
 
 
-def evaluate(model, X, y, device=None):
+def evaluate(model, X, y, num_classes=1, device=None):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -15,8 +15,12 @@ def evaluate(model, X, y, device=None):
 
     model.eval()
     with torch.no_grad():
-        preds = (model(X) > 0.5).float()
-        acc = (preds.eq(y).float().mean()).item()
+        if num_classes > 1:
+            preds = model(X).argmax(dim=1)
+            acc = preds.eq(y.long()).float().mean().item()
+        else:
+            preds = (model(X) > 0.5).float()
+            acc = preds.eq(y).float().mean().item()
     return acc
 
 

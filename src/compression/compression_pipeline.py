@@ -1,3 +1,6 @@
+import copy
+import io
+
 import torch
 from collections import defaultdict
 from src.training.train import train
@@ -43,8 +46,10 @@ def compress_model(model, fine_tune_data=None, fine_tune_epochs=3, fine_tune_lr=
 
     if fine_tune_data is not None:
         X, y = fine_tune_data
+        num_classes = getattr(model, "num_classes", 1)
         decompress_model(compressed, model)
-        train(model, X, y, epochs=fine_tune_epochs, lr=fine_tune_lr, use_tqdm=False)
+        train(model, X, y, epochs=fine_tune_epochs, lr=fine_tune_lr, use_tqdm=False,
+              num_classes=num_classes)
         compressed = _quantize(model)
 
     return compressed
@@ -55,7 +60,7 @@ def decompress_model(compressed, model):
     with torch.no_grad():
         for name, p in model.named_parameters():
             entry = compressed[name]
-            p.data = (entry["q"].float() * entry["scale"]).to(p.dtype)
+            p.data = (entry["q"].float() * entry["scale"]).to(dtype=p.dtype, device=p.device)
     return model
 
 
@@ -74,3 +79,57 @@ def compressed_size_bytes(compressed):
             total += 4
             seen_layers.add(layer)
     return total
+
+
+# ------------------------------------------------------------------ #
+# Global int8 quantization (single scale for all parameters)         #
+# ------------------------------------------------------------------ #
+
+def _quantize_global(model):
+    """Quantize all parameters using one global scale."""
+    all_params = [p.data for _, p in model.named_parameters()]
+    global_max = max(t.abs().max().item() for t in all_params)
+    scale = torch.tensor(global_max / 127.0 if global_max > 0 else 1.0, dtype=torch.float32)
+    compressed = {}
+    with torch.no_grad():
+        for name, p in model.named_parameters():
+            q = torch.round(p.data / scale).clamp(-127, 127).to(torch.int8)
+            compressed[name] = {"q": q.cpu(), "scale": scale.cpu()}
+    return compressed
+
+
+def compress_model_global(model, fine_tune_data=None, fine_tune_epochs=3, fine_tune_lr=1e-4):
+    """Compress via global int8 quantization (single scale for all layers)."""
+    compressed = _quantize_global(model)
+    if fine_tune_data is not None:
+        X, y = fine_tune_data
+        num_classes = getattr(model, "num_classes", 1)
+        decompress_model(compressed, model)
+        train(model, X, y, epochs=fine_tune_epochs, lr=fine_tune_lr, use_tqdm=False,
+              num_classes=num_classes)
+        compressed = _quantize_global(model)
+    return compressed
+
+
+# ------------------------------------------------------------------ #
+# PyTorch dynamic quantization (int8 weights, runtime activation quant)
+# ------------------------------------------------------------------ #
+
+def compress_model_dynamic(model):
+    """Apply PyTorch dynamic quantization to Linear layers (CPU-only).
+
+    Returns a new quantized model; the original is not modified.
+    No fine-tuning or calibration data required.
+    """
+    model_cpu = copy.deepcopy(model).cpu().eval()
+    quantized = torch.ao.quantization.quantize_dynamic(
+        model_cpu, {torch.nn.Linear}, dtype=torch.qint8
+    )
+    return quantized
+
+
+def dynamic_model_size_bytes(model):
+    """Estimate size by serialising the quantized state dict to a buffer."""
+    buf = io.BytesIO()
+    torch.save(model.state_dict(), buf)
+    return buf.tell()
