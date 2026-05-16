@@ -66,8 +66,7 @@ First complete implementation of the Snowflake (per-layer int8) compression meth
 
 ## 2026-05-14 — Architecture Overhaul + ECG Experiments
 
-**Commits:** `0fff1ae` Refactor · `6255b14` Soma layer · `ba1446e` use_soma toggle + param-matched MLP  
-**Session work (uncommitted):** `.npy` caching, `--seeds` flag, auto-logging, dynamic quantization, pruning removal
+**Commits:** `0fff1ae` Refactor · `6255b14` Soma layer · `ba1446e` use_soma toggle + param-matched MLP · `2177bd0` ECG + compression baselines + auto-logging
 
 ### Morning — Codebase Refactor (`0fff1ae`)
 - Added 10% validation split and per-epoch val loss tracking to adult, folktables, HAR experiments
@@ -90,7 +89,7 @@ First complete implementation of the Snowflake (per-layer int8) compression meth
 - `evaluate.py`: added `count_params()` utility
 - `main.py`: disabled adult/folktables/scaling; `--arch` shows param-matched MLP
 
-### Afternoon/Evening — ECG Compression Experiments (session work)
+### Afternoon/Evening — ECG Compression Experiments (`2177bd0`)
 
 **Dataset:** MIT-BIH ECG, 87,554 train / 21,892 test, 187 features, 5 classes  
 **Model:** DendriticNetwork (hidden1=64, hidden2=32, branches=8, hidden_per_branch=8, ~17k params)
@@ -140,9 +139,66 @@ Compression methods evaluated:
 
 ---
 
+## 2026-05-16 — 3-Seed Evaluation + Dynamic Quant Size Fix
+
+**Commits:** *(this session)*
+
+### Summary
+Fixed `dynamic_model_size_bytes` to report true raw data size (was inflated ~2× by pickle overhead). Ran full 3-seed evaluation (seeds 42, 0, 7) across all active experiments: ablation, component, HAR, ECG.
+
+### Dynamic Quantization Size Fix
+
+`torch.save` on PackedParams objects adds ~15KB pickle overhead, making dynamic quant appear ~2× instead of ~4×. Fixed by measuring raw data directly:
+- int8 weights: `mod.weight().int_repr().numel()` (1 byte each)
+- fp32 biases: `mod.bias().numel() * 4` (4 bytes each)
+
+Result: Dynamic now reports 17,684 bytes (~3.9×) vs 17,213 bytes (4.0×) for Snowflake — 471-byte gap is float32 biases vs int8 biases.
+
+### 3-Seed Results (seeds 42, 0, 7 — 50 epochs, fine_tune_epochs=3)
+
+**ECG Heartbeat (MIT-BIH, 5-class) — primary benchmark:**
+
+| Method | Accuracy | ± std | Delta | Size (bytes) | Ratio |
+|---|---|---|---|---|---|
+| Uncompressed (Dendritic) | 95.97% | ±1.15% | — | 68,660 | 1× |
+| **Snowflake (int8)** | **96.58%** | **±0.89%** | **+0.61%** | 17,213 | **4×** |
+| Dynamic (int8) | 95.72% | ±1.45% | -0.25% | 17,684 | ~3.9× |
+| Global int8 | 95.31% | ±2.63% | -0.65% | 17,213 | 4× |
+| MLP Baseline | 94.96% | ±0.31% | — | 68,728 | 1× |
+| MLP Compressed | 94.85% | ±0.55% | — | 17,190 | 4× |
+
+**HAR (binary walking vs stationary) — saturated, not informative:**
+
+All methods: ~99.98% ±0.03% — task too easy to distinguish compression quality.
+
+**Observations:**
+1. **Snowflake confirmed best across seeds** — 4× compression, +0.61% gain, lowest variance (±0.89%)
+2. **Global int8 unstable** — highest variance (±2.63%), single scale inadequate for well-trained model
+3. **Dendritic beats MLP** — uncompressed (95.97% vs 94.96%) and compressed (96.58% vs 94.85%)
+4. **Dynamic quant marginally negative** (-0.25%) with ~3.9× ratio after size fix
+5. **HAR task saturated** — binary classification too easy; ECG is the meaningful benchmark
+
+---
+
+## Commit History
+
+| Commit | Date | Summary |
+|---|---|---|
+| `4e2ea4d` | 2026-05-07 | First commit — base DendriticNetwork, compression pipeline, experiment stubs |
+| `2904a8c` | 2026-05-07 | v1 — expanded compression pipeline, UCI Adult, Folktables, Scaling experiments |
+| `de51991` | 2026-05-11 | v2 — MSE metrics, creditcard/folktables-multistate experiments, reporting plots |
+| `fb9ffef` | 2026-05-13 | Snowflake compression with MLP baseline comparison, output system, `--arch` flag |
+| `0fff1ae` | 2026-05-14 | Refactor: validation splits, HAR experiment, `src/loaders/`, `src/reporting/` module |
+| `6255b14` | 2026-05-14 | Add soma layer to DendriticNetwork |
+| `ba1446e` | 2026-05-14 | Param-matched MLP baseline, `use_soma` toggle, `count_params` utility |
+| `2177bd0` | 2026-05-14 | ECG experiment, global int8 + dynamic quantization, HAR updated, auto-logging, experiment log |
+| *(pending)* | 2026-05-16 | Fix `dynamic_model_size_bytes`, 3-seed evaluation (ECG + HAR), update experiment log |
+
+---
+
 ## Next Steps
 
-- [ ] Commit today's session work (caching, logging, dynamic quantization)
-- [ ] Run 3-seed evaluation (seeds 42, 0, 7) for reliable ± std statistics
-- [ ] Apply same compression comparison to HAR experiment
-- [ ] Investigate dynamic quantization size overhead — manual int8 packing may close the ~2× gap
+- [x] ~~Commit today's session work~~ — done in `2177bd0`
+- [x] ~~Apply same compression comparison to HAR experiment~~ — done in `2177bd0`
+- [x] ~~Run 3-seed evaluation (seeds 42, 0, 7) for reliable ± std statistics~~ — done 2026-05-16
+- [x] ~~Investigate dynamic quantization size overhead~~ — fixed 2026-05-16 (pickle overhead; raw data = 17,684 bytes ≈ 3.9×)

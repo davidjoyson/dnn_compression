@@ -129,7 +129,17 @@ def compress_model_dynamic(model):
 
 
 def dynamic_model_size_bytes(model):
-    """Estimate size by serialising the quantized state dict to a buffer."""
-    buf = io.BytesIO()
-    torch.save(model.state_dict(), buf)
-    return buf.tell()
+    """True compressed size: int8 weight bytes + float32 bias bytes per Linear layer.
+
+    torch.save inflates size ~2x due to pickle overhead on PackedParams objects;
+    this measures the raw data actually stored.
+    """
+    total = 0
+    for _, mod in model.named_modules():
+        if hasattr(mod, "weight") and hasattr(mod, "bias"):
+            try:
+                total += mod.weight().int_repr().numel()      # 1 byte per int8 weight
+                total += mod.bias().numel() * 4               # 4 bytes per float32 bias
+            except Exception:
+                pass
+    return total
