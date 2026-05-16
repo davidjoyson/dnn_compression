@@ -128,6 +128,89 @@ def compress_model_dynamic(model):
     return quantized
 
 
+# ------------------------------------------------------------------ #
+# Per-layer int4 quantization (Snowflake-4bit, 8× vs float32)        #
+# ------------------------------------------------------------------ #
+
+def _pack_int4(q_int8):
+    """Pack int8 tensor (values in [-7,7]) into uint4 nibbles (offset +8).
+    Returns (packed_uint8_tensor, original_numel)."""
+    flat = q_int8.reshape(-1)
+    numel = flat.numel()
+    if numel % 2 != 0:
+        flat = torch.cat([flat, flat.new_zeros(1)])
+    encoded = (flat + 8).to(torch.uint8)          # [-7,7] → [1,15]
+    packed = ((encoded[::2] & 0x0F) << 4) | (encoded[1::2] & 0x0F)
+    return packed, numel
+
+
+def _unpack_int4(packed, numel):
+    """Unpack uint4 nibbles (offset +8) back to int8 tensor."""
+    high = ((packed >> 4) & 0x0F).to(torch.int16)
+    low  = (packed        & 0x0F).to(torch.int16)
+    interleaved = torch.stack([high, low], dim=1).reshape(-1)[:numel]
+    return (interleaved - 8).to(torch.int8)
+
+
+def _quantize_int4(model):
+    """Per-layer int4 quantization: one scale per layer group, weights clamped to [-7, 7]."""
+    groups = defaultdict(list)
+    for name, p in model.named_parameters():
+        layer = name.rsplit(".", 1)[0] if "." in name else name
+        groups[layer].append(p.data)
+
+    layer_scales = {}
+    for layer, tensors in groups.items():
+        max_val = max(t.abs().max().item() for t in tensors)
+        layer_scales[layer] = torch.tensor(max_val / 7.0 if max_val > 0 else 1.0, dtype=torch.float32)
+
+    compressed = {}
+    with torch.no_grad():
+        for name, p in model.named_parameters():
+            layer = name.rsplit(".", 1)[0] if "." in name else name
+            scale = layer_scales[layer]
+            q = torch.round(p.data / scale).clamp(-7, 7).to(torch.int8)
+            packed, numel = _pack_int4(q.cpu())
+            compressed[name] = {"q4": packed, "numel": numel, "shape": p.data.shape, "scale": scale.cpu()}
+    return compressed
+
+
+def compress_model_int4(model, fine_tune_data=None, fine_tune_epochs=3, fine_tune_lr=1e-4):
+    """Compress via per-layer int4 quantization (8× compression vs float32)."""
+    compressed = _quantize_int4(model)
+    if fine_tune_data is not None:
+        X, y = fine_tune_data
+        num_classes = getattr(model, "num_classes", 1)
+        decompress_model_int4(compressed, model)
+        train(model, X, y, epochs=fine_tune_epochs, lr=fine_tune_lr, use_tqdm=False,
+              num_classes=num_classes)
+        compressed = _quantize_int4(model)
+    return compressed
+
+
+def decompress_model_int4(compressed, model):
+    """Load int4-compressed weights back into model for evaluation."""
+    with torch.no_grad():
+        for name, p in model.named_parameters():
+            entry = compressed[name]
+            q = _unpack_int4(entry["q4"], entry["numel"]).reshape(entry["shape"])
+            p.data = (q.float() * entry["scale"]).to(dtype=p.dtype, device=p.device)
+    return model
+
+
+def compressed_size_bytes_int4(compressed):
+    """Compressed size: ceil(n/2) packed bytes per tensor + 4 bytes per layer scale."""
+    total = 0
+    seen_layers = set()
+    for name, entry in compressed.items():
+        total += entry["q4"].numel()
+        layer = name.rsplit(".", 1)[0] if "." in name else name
+        if layer not in seen_layers:
+            total += 4
+            seen_layers.add(layer)
+    return total
+
+
 def dynamic_model_size_bytes(model):
     """True compressed size: int8 weight bytes + float32 bias bytes per Linear layer.
 

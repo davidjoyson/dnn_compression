@@ -139,12 +139,33 @@ Compression methods evaluated:
 
 ---
 
-## 2026-05-16 — 3-Seed Evaluation + Dynamic Quant Size Fix
+## 2026-05-16 — Int4 Quantization + 3-Seed Evaluation
 
 **Commits:** *(this session)*
 
 ### Summary
 Fixed `dynamic_model_size_bytes` to report true raw data size (was inflated ~2× by pickle overhead). Ran full 3-seed evaluation (seeds 42, 0, 7) across all active experiments: ablation, component, HAR, ECG.
+
+### Snowflake int4 (4-bit) Quantization
+
+Added per-layer int4 quantization as the 4th compression method:
+- **Packing**: values clamped to [-7, 7], offset-encoded (+8 → [1,15] as uint4), packed 2-per-byte
+- **Scale**: same per-layer-group scheme as Snowflake int8 (weight+bias share one scale)
+- **Storage**: `ceil(n/2)` packed bytes + 4 bytes per layer scale → 8× compression vs float32
+
+**3-seed ECG results (seeds 42, 0, 7 — 50 epochs, fine_tune_epochs=3):**
+
+| Method | Accuracy | ± std | Delta | Size (bytes) | Ratio |
+|---|---|---|---|---|---|
+| Uncompressed (Dendritic) | 95.97% | ±1.15% | — | 68,660 | 1× |
+| **Snowflake (int8)** | **96.58%** | **±0.89%** | **+0.61%** | 17,213 | **4×** |
+| Dynamic (int8) | 95.72% | ±1.45% | -0.25% | 17,684 | ~3.9× |
+| Global int8 | 95.31% | ±2.63% | -0.65% | 17,213 | 4× |
+| **Snowflake (int4)** | **72.30%** | **±13.89%** | **-23.67%** | **8,631** | **8×** |
+
+**Finding: int4 is not viable for ~17k param models.** The 4-bit range (14 representable values) is too narrow for the weight distributions after training. High variance (±13.89%) shows training is unstable — the quantisation grid is coarser than the meaningful weight differences. Conclusion: **8-bit is the minimum precision for models at this scale**.
+
+To make int4 viable would require a significantly larger model (more parameters to absorb quantisation error) or a much larger fine-tuning budget.
 
 ### Dynamic Quantization Size Fix
 
@@ -154,29 +175,20 @@ Fixed `dynamic_model_size_bytes` to report true raw data size (was inflated ~2×
 
 Result: Dynamic now reports 17,684 bytes (~3.9×) vs 17,213 bytes (4.0×) for Snowflake — 471-byte gap is float32 biases vs int8 biases.
 
-### 3-Seed Results (seeds 42, 0, 7 — 50 epochs, fine_tune_epochs=3)
+### 3-Seed Results — Summary
 
-**ECG Heartbeat (MIT-BIH, 5-class) — primary benchmark:**
+See int4 table above for full ECG results. Additional notes:
 
-| Method | Accuracy | ± std | Delta | Size (bytes) | Ratio |
-|---|---|---|---|---|---|
-| Uncompressed (Dendritic) | 95.97% | ±1.15% | — | 68,660 | 1× |
-| **Snowflake (int8)** | **96.58%** | **±0.89%** | **+0.61%** | 17,213 | **4×** |
-| Dynamic (int8) | 95.72% | ±1.45% | -0.25% | 17,684 | ~3.9× |
-| Global int8 | 95.31% | ±2.63% | -0.65% | 17,213 | 4× |
-| MLP Baseline | 94.96% | ±0.31% | — | 68,728 | 1× |
-| MLP Compressed | 94.85% | ±0.55% | — | 17,190 | 4× |
-
-**HAR (binary walking vs stationary) — saturated, not informative:**
-
-All methods: ~99.98% ±0.03% — task too easy to distinguish compression quality.
+- **MLP Baseline**: 94.96% ±0.31% (uncompressed), 94.85% ±0.55% (compressed at 4×)
+- **HAR** (binary walking vs stationary): all methods ~99.98% ±0.03% — task too easy to distinguish compression quality
 
 **Observations:**
 1. **Snowflake confirmed best across seeds** — 4× compression, +0.61% gain, lowest variance (±0.89%)
 2. **Global int8 unstable** — highest variance (±2.63%), single scale inadequate for well-trained model
 3. **Dendritic beats MLP** — uncompressed (95.97% vs 94.96%) and compressed (96.58% vs 94.85%)
 4. **Dynamic quant marginally negative** (-0.25%) with ~3.9× ratio after size fix
-5. **HAR task saturated** — binary classification too easy; ECG is the meaningful benchmark
+5. **int4 not viable** at ~17k params — 8-bit is minimum precision for this model scale
+6. **HAR task saturated** — binary classification too easy; ECG is the meaningful benchmark
 
 ---
 
@@ -192,7 +204,7 @@ All methods: ~99.98% ±0.03% — task too easy to distinguish compression qualit
 | `6255b14` | 2026-05-14 | Add soma layer to DendriticNetwork |
 | `ba1446e` | 2026-05-14 | Param-matched MLP baseline, `use_soma` toggle, `count_params` utility |
 | `2177bd0` | 2026-05-14 | ECG experiment, global int8 + dynamic quantization, HAR updated, auto-logging, experiment log |
-| *(pending)* | 2026-05-16 | Fix `dynamic_model_size_bytes`, 3-seed evaluation (ECG + HAR), update experiment log |
+| *(pending)* | 2026-05-16 | Add int4 quantization (8×); 3-seed ECG+HAR evaluation; dynamic size fix; int4 not viable at ~17k params |
 
 ---
 
@@ -202,3 +214,4 @@ All methods: ~99.98% ±0.03% — task too easy to distinguish compression qualit
 - [x] ~~Apply same compression comparison to HAR experiment~~ — done in `2177bd0`
 - [x] ~~Run 3-seed evaluation (seeds 42, 0, 7) for reliable ± std statistics~~ — done 2026-05-16
 - [x] ~~Investigate dynamic quantization size overhead~~ — fixed 2026-05-16 (pickle overhead; raw data = 17,684 bytes ≈ 3.9×)
+- [x] ~~Add int4 (4-bit) quantization~~ — done 2026-05-16; not viable at ~17k params (-23.67%, ±13.89%), 8-bit is minimum

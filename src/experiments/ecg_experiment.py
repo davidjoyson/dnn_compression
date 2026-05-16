@@ -13,6 +13,9 @@ from src.compression.compression_pipeline import (
     compress_model_global,
     compress_model_dynamic,
     dynamic_model_size_bytes,
+    compress_model_int4,
+    decompress_model_int4,
+    compressed_size_bytes_int4,
 )
 
 NUM_CLASSES = 5
@@ -20,9 +23,9 @@ NUM_CLASSES = 5
 
 def run_ecg(epochs=50, seeds=(42,), fine_tune_epochs=3):
     acc_u_list, acc_c_list, acc_mlp_list, acc_mlp_c_list = [], [], [], []
-    acc_global_list, acc_dynamic_list = [], []
+    acc_global_list, acc_dynamic_list, acc_int4_list = [], [], []
     size_u, size_c = None, None
-    size_global, size_dynamic = None, None
+    size_global, size_dynamic, size_int4 = None, None, None
     size_mlp_u, size_mlp_c = None, None
     loss_history = None
 
@@ -77,11 +80,19 @@ def run_ecg(epochs=50, seeds=(42,), fine_tune_epochs=3):
         model_dynamic = compress_model_dynamic(model_u)
         acc_dynamic_list.append(evaluate(model_dynamic, X_test, y_test, num_classes=NUM_CLASSES, device="cpu"))
 
+        # Snowflake int4: per-layer 4-bit quantization (8× compression)
+        model_u.load_state_dict(original_state)
+        compressed_int4 = compress_model_int4(model_u, fine_tune_data=(X_train, y_train),
+                                              fine_tune_epochs=fine_tune_epochs)
+        decompress_model_int4(compressed_int4, model_u)
+        acc_int4_list.append(evaluate(model_u, X_test, y_test, num_classes=NUM_CLASSES))
+
         if size_u is None:
             size_u = model_u.size_bytes()
             size_c = compressed_size_bytes(compressed)
             size_global = compressed_size_bytes(compressed_global)
             size_dynamic = dynamic_model_size_bytes(model_dynamic)
+            size_int4 = compressed_size_bytes_int4(compressed_int4)
 
         mlp = MLPBaseline(
             input_dim=X_train.shape[1],
@@ -121,6 +132,7 @@ def run_ecg(epochs=50, seeds=(42,), fine_tune_epochs=3):
             "compressed":          _mean(acc_c_list),
             "compressed_global":   _mean(acc_global_list),
             "compressed_dynamic":  _mean(acc_dynamic_list),
+            "compressed_int4":     _mean(acc_int4_list),
             "mlp_baseline":        _mean(acc_mlp_list),
             "mlp_compressed":      _mean(acc_mlp_c_list),
         },
@@ -129,6 +141,7 @@ def run_ecg(epochs=50, seeds=(42,), fine_tune_epochs=3):
             "compressed":          _std(acc_c_list),
             "compressed_global":   _std(acc_global_list),
             "compressed_dynamic":  _std(acc_dynamic_list),
+            "compressed_int4":     _std(acc_int4_list),
             "mlp_baseline":        _std(acc_mlp_list),
             "mlp_compressed":      _std(acc_mlp_c_list),
         },
@@ -137,6 +150,7 @@ def run_ecg(epochs=50, seeds=(42,), fine_tune_epochs=3):
             "compressed":         size_c,
             "compressed_global":  size_global,
             "compressed_dynamic": size_dynamic,
+            "compressed_int4":    size_int4,
             "mlp_uncompressed":   size_mlp_u,
             "mlp_compressed":     size_mlp_c,
         },
