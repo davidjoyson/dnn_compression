@@ -11,6 +11,8 @@ def generate_plots(results):
     import torch
     print("\n=== Generating Plots ===\n")
 
+    import math
+
     for name, r in results.items():
         if not isinstance(r, dict):
             continue
@@ -19,17 +21,42 @@ def generate_plots(results):
             continue
         if hasattr(acc_u_val, "numel") and acc_u_val.numel() != 1:
             continue
+
+        slug = name.lower().replace(" ", "_")
+
+        # Build full method dict — include any method that has a non-NaN accuracy
+        def _acc(key, std_key=None):
+            v = to_float(r.get(key, float("nan")))
+            s = to_float(r.get(std_key, 0.0)) if std_key else 0.0
+            return (v, s)
+
+        methods = {"Uncompressed": _acc("accuracy_uncompressed", "std_uncompressed")}
+        sf8 = _acc("accuracy_compressed", "std_compressed")
+        if not math.isnan(sf8[0]):
+            methods["Snowflake (int8)"] = sf8
+        gl8 = _acc("accuracy_compressed_global", "std_compressed_global")
+        if not math.isnan(gl8[0]):
+            methods["Global int8"] = gl8
+        dyn = _acc("accuracy_compressed_dynamic", "std_compressed_dynamic")
+        if not math.isnan(dyn[0]):
+            methods["Dynamic (int8)"] = dyn
+        int4 = _acc("accuracy_compressed_int4", "std_compressed_int4")
+        if not math.isnan(int4[0]):
+            methods["Snowflake (int4)"] = int4
+        mlp = _acc("accuracy_mlp_baseline", "std_mlp_baseline")
+        if not math.isnan(mlp[0]):
+            methods["MLP Baseline"] = mlp
+
         plot_accuracy(
-            to_float(acc_u_val),
-            to_float(r["accuracy_compressed"]),
+            methods,
             title=f"{name} Accuracy",
-            filename=f"{name.lower().replace(' ', '_')}_accuracy.png",
+            filename=f"{slug}_accuracy.png",
         )
         if "size_uncompressed" in r and not isinstance(r["size_uncompressed"], torch.Tensor):
             plot_compression(
                 r["size_uncompressed"],
                 r["size_compressed"],
-                filename=f"{name.lower().replace(' ', '_')}_compression.png",
+                filename=f"{slug}_compression.png",
             )
 
     if "Scaling Experiment" in results:
