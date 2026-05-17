@@ -12,6 +12,7 @@ from src.experiments.ablation_study import run_ablation, run_compression_compone
 from src.experiments.scaling_experiment import run_scaling_experiment
 from src.experiments.har_experiment import run_har
 from src.experiments.ecg_experiment import run_ecg
+from src.experiments.eeg_experiment import run_eeg
 
 from src.loaders.load_adult import load_adult_income
 from src.loaders.load_wine import load_wine
@@ -37,7 +38,7 @@ EPOCHS = 50
 ALL_EXPERIMENTS = [
     # "adult", "folktables",
     "ablation", "component",  # "scaling",
-    "har", "ecg",
+    "har", "ecg", "eeg",
 ]
 
 class _Tee:
@@ -133,6 +134,14 @@ def _run_ecg(results, timings, epochs, seeds, fine_tune_epochs=3):
                  time.time() - t0)
 
 
+def _run_eeg(results, timings, epochs, seeds, fine_tune_epochs=3):
+    print("\n=== EEG Brainwave (Emotions, 3-class) ===\n")
+    t0 = time.time()
+    store_simple(results, timings, "EEG Brainwave",
+                 run_eeg(epochs=epochs, seeds=seeds, fine_tune_epochs=fine_tune_epochs),
+                 time.time() - t0)
+
+
 REGISTRY = {
     "adult":      _run_adult,
     "folktables": _run_folktables,
@@ -141,6 +150,7 @@ REGISTRY = {
     "scaling":     _run_scaling,
     "har":         _run_har,
     "ecg":         _run_ecg,
+    "eeg":         _run_eeg,
 }
 
 # ------------------------------------------------------------------ #
@@ -193,7 +203,7 @@ def main():
     print(f"    Output dir: {run_dir}")
     print(f"    Log file  : {log_path}\n")
 
-    _fine_tune_runners = {"adult", "har", "ecg"}
+    _fine_tune_runners = {"adult", "har", "ecg", "eeg"}
 
     results, timings = {}, {}
     pbar = tqdm(total=len(args.exp), desc="Experiments", colour="cyan")

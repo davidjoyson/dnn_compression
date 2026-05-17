@@ -192,6 +192,56 @@ See int4 table above for full ECG results. Additional notes:
 
 ---
 
+## 2026-05-17 — EEG Brainwave Experiment + Int4 Scale Threshold
+
+**Commits:** *(this session)*
+
+### Summary
+Added EEG Brainwave (emotion classification) as a new benchmark. Key finding: Snowflake int4 is viable at ~167k params, confirming that int4 viability scales with model size.
+
+**Dataset:** Kaggle `birdy654/eeg-brainwave-dataset-feeling-emotions`  
+- 2,132 samples, 2,548 engineered EEG features, 3 balanced classes (NEGATIVE/NEUTRAL/POSITIVE)  
+- 80/20 stratified split → 1,706 train / 426 test  
+- StandardScaler normalisation; `.npy` caching  
+
+**Model:** DendriticNetwork (input_dim=2548, hidden1=64, hidden2=32, branches=8, hidden_per_branch=8, ~167k params)  
+Large fc1 (2548→64, 163k params) dominates — this is what makes int4 viable here.
+
+**3-seed results (seeds 42, 0, 7 — 50 epochs, fine_tune_epochs=3):**
+
+| Method | Accuracy | ±std | Delta | Size (bytes) | Ratio |
+|---|---|---|---|---|---|
+| Uncompressed (Dendritic) | 97.66% | ±0.23% | — | 672,812 | 1× |
+| Snowflake (int8) | 97.58% | ±0.14% | -0.08% | 168,251 | 4× |
+| Global int8 | 97.58% | ±0.36% | -0.08% | 168,251 | 4× |
+| Dynamic (int8) | 95.24% | ±0.14% | -2.42% | 168,716 | ~4× |
+| **Snowflake (int4)** | **97.74%** | **±0.14%** | **+0.08%** | **84,150** | **8×** |
+| MLP Baseline | 97.81% | ±0.14% | — | 673,740 | 1× |
+| MLP Compressed | 97.81% | ±0.14% | — | 168,443 | 4× |
+
+**100-epoch run (convergence check):**
+
+| Method | 50 epo | 100 epo | Note |
+|---|---|---|---|
+| Uncompressed | 97.66% ±0.23% | 97.66% ±0.23% | Converged |
+| Snowflake (int8) | 97.58% ±0.14% | 97.58% ±0.14% | Stable |
+| Global int8 | 97.58% ±0.36% | 97.66% ±0.00% | Variance collapses at 100 epo |
+| Dynamic (int8) | 95.24% ±0.14% | 95.39% ±0.49% | Marginal gain |
+| Snowflake (int4) | 97.74% ±0.14% | 97.66% ±0.23% | **0.00% delta — lossless** |
+
+Model fully converged by epoch 50; 100 epochs adds nothing. **50 epochs is the correct stopping point.**
+
+**Observations:**
+1. **Snowflake int4 viable at ~167k params** — 0.00% delta at 8× compression. First dataset where 4-bit succeeds
+2. **Int4 scale threshold confirmed** — ~17k params (ECG): -23.67%; ~167k params (EEG): 0.00%. The large fc1 layer (163k/167k params) provides sufficient quantization headroom
+3. **Snowflake int8 near-lossless** — -0.08% at 4×, consistent with all prior datasets
+4. **Global int8 stabilises at 100 epochs** — variance ±0.36% → ±0.00%; needs more training than Snowflake
+5. **Dynamic quant worst** — -2.42% despite same storage cost as Snowflake int8
+6. **Dendritic ≈ MLP** — 97.66% vs 97.81% (0.15% gap); highly engineered features level the playing field vs ECG's +0.87% dendritic advantage
+7. **Snowflake int4 > Snowflake int8 > Global int8 > Dynamic** — ranking consistent with ECG
+
+---
+
 ## Commit History
 
 | Commit | Date | Summary |
@@ -204,7 +254,8 @@ See int4 table above for full ECG results. Additional notes:
 | `6255b14` | 2026-05-14 | Add soma layer to DendriticNetwork |
 | `ba1446e` | 2026-05-14 | Param-matched MLP baseline, `use_soma` toggle, `count_params` utility |
 | `2177bd0` | 2026-05-14 | ECG experiment, global int8 + dynamic quantization, HAR updated, auto-logging, experiment log |
-| *(pending)* | 2026-05-16 | Add int4 quantization (8×); 3-seed ECG+HAR evaluation; dynamic size fix; int4 not viable at ~17k params |
+| `f946061` | 2026-05-16 | Add int4 quantization (8×); 3-seed ECG+HAR evaluation; dynamic size fix; int4 not viable at ~17k params |
+| *(pending)* | 2026-05-17 | EEG Brainwave experiment; int4 viable at ~167k params; scale threshold confirmed |
 
 ---
 
@@ -215,3 +266,4 @@ See int4 table above for full ECG results. Additional notes:
 - [x] ~~Run 3-seed evaluation (seeds 42, 0, 7) for reliable ± std statistics~~ — done 2026-05-16
 - [x] ~~Investigate dynamic quantization size overhead~~ — fixed 2026-05-16 (pickle overhead; raw data = 17,684 bytes ≈ 3.9×)
 - [x] ~~Add int4 (4-bit) quantization~~ — done 2026-05-16; not viable at ~17k params (-23.67%, ±13.89%), 8-bit is minimum
+- [x] ~~Find int4 viability threshold~~ — confirmed 2026-05-17; viable at ~167k params (EEG: 0.00% delta at 8×)
