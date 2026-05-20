@@ -1,33 +1,49 @@
 import matplotlib.pyplot as plt
 from .save_utils import fig_path
+from .style import apply_style
 
-_COLORS = {
-    "Dendritic (Uncompressed)": "#4C72B0",
-    "MLP Baseline":             "#DD8452",
-    "Dendritic (Val)":          "#4C72B0",
-    "MLP (Val)":                "#DD8452",
+
+_TRAIN_COLORS = {
+    "Dendritic (Uncompressed)": "#4878CF",
+    "MLP Baseline":             "#E87722",
+    "Dendritic (Val)":          "#4878CF",
+    "MLP (Val)":                "#E87722",
 }
+
+
+def _smooth(values, alpha=0.6):
+    out, s = [], None
+    for v in values:
+        s = v if s is None else alpha * s + (1 - alpha) * v
+        out.append(s)
+    return out
 
 
 def plot_training_curves(histories, title="", filename=None):
     """
-    histories: dict of {label: [avg_loss_per_epoch]}
-    Val entries (label contains "(Val)") are drawn dashed at reduced opacity.
+    histories: dict of {label: [loss_per_epoch]}
+    Labels containing "(Val)" are drawn dashed; raw values are EMA-smoothed.
     """
+    apply_style()
+
     plt.figure(figsize=(7, 4))
     for label, losses in histories.items():
-        color = _COLORS.get(label)
+        color = _TRAIN_COLORS.get(label)
         is_val = "(Val)" in label
-        plt.plot(range(1, len(losses) + 1), losses, label=label, color=color, lw=1.5,
-                 linestyle="--" if is_val else "-", alpha=0.6 if is_val else 1.0)
+        smoothed = _smooth(losses, alpha=0.7)
+        plt.plot(range(1, len(smoothed) + 1), smoothed,
+                 label=label, color=color, lw=1.8,
+                 linestyle="--" if is_val else "-",
+                 alpha=0.65 if is_val else 1.0)
+
     plt.xlabel("Epoch")
-    plt.ylabel("BCE Loss")
-    plt.title(f"Training Loss{' — ' + title if title else ''}", pad=12)
-    plt.legend()
-    plt.grid(linestyle="--", alpha=0.4)
+    plt.ylabel("Loss")
+    plt.title(f"Training Curves{' — ' + title if title else ''}", pad=12)
+    plt.legend(loc="upper right")
     plt.tight_layout()
+
     if filename is None:
         slug = title.lower().replace(" ", "_").replace("/", "_")
         filename = f"{slug}_training_curves.png"
-    plt.savefig(fig_path(filename), dpi=150)
+    plt.savefig(fig_path(filename), dpi=150, bbox_inches="tight")
     plt.close()

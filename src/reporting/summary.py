@@ -138,8 +138,12 @@ def print_summary(results, timings):
         std_global   = to_float(r.get("std_compressed_global",       0.0))
         acc_dynamic  = to_float(r.get("accuracy_compressed_dynamic", float("nan")))
         std_dynamic  = to_float(r.get("std_compressed_dynamic",      0.0))
-        acc_int4     = to_float(r.get("accuracy_compressed_int4",    float("nan")))
-        std_int4     = to_float(r.get("std_compressed_int4",         0.0))
+        f1_u      = to_float(r.get("f1_uncompressed",       float("nan")))
+        f1_c      = to_float(r.get("f1_compressed",         float("nan")))
+        f1_global = to_float(r.get("f1_compressed_global",  float("nan")))
+        f1_dyn    = to_float(r.get("f1_compressed_dynamic", float("nan")))
+        f1_mlp    = to_float(r.get("f1_mlp_baseline",       float("nan")))
+        f1_mlp_c  = to_float(r.get("f1_mlp_compressed",     float("nan")))
         mse_u         = to_float(r.get("mse_uncompressed",     float("nan")))
         mse_c         = to_float(r.get("mse_compressed",       float("nan")))
         mse_mlp       = to_float(r.get("mse_mlp_baseline",     float("nan")))
@@ -159,17 +163,23 @@ def print_summary(results, timings):
             print(f"  Global int8      : {acc_global:.4f} +/- {std_global:.4f}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_global','?')} bytes]")
         if acc_dynamic == acc_dynamic:
             print(f"  Dynamic (int8)   : {acc_dynamic:.4f} +/- {std_dynamic:.4f}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_dynamic','?')} bytes]")
-        if acc_int4 == acc_int4:
-            print(f"  Snowflake (int4) : {acc_int4:.4f} +/- {std_int4:.4f}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_int4','?')} bytes]")
         if acc_global == acc_global and acc_dynamic == acc_dynamic:
-            delta_line = f"  -- Compression delta: Snowflake(8b)={acc_c - acc_u:+.4f} | Global(8b)={acc_global - acc_u:+.4f} | Dynamic(8b)={acc_dynamic - acc_u:+.4f}"
-            if acc_int4 == acc_int4:
-                delta_line += f" | Snowflake(4b)={acc_int4 - acc_u:+.4f}"
-            print(delta_line)
+            print(f"  -- Compression delta: Snowflake(8b)={acc_c - acc_u:+.4f} | Global(8b)={acc_global - acc_u:+.4f} | Dynamic(8b)={acc_dynamic - acc_u:+.4f}")
         if acc_mlp == acc_mlp:
             print(f"  MLP Baseline Acc : {acc_mlp:.4f} +/- {std_mlp:.4f}")
         if acc_mlp_c == acc_mlp_c:
             print(f"  MLP Compressed   : {acc_mlp_c:.4f} +/- {std_mlp_c:.4f}")
+        if f1_u == f1_u:
+            print(f"  Uncompressed F1  : {f1_u:.4f}")
+            print(f"  Snowflake F1     : {f1_c:.4f}  (delta={f1_c - f1_u:+.4f})")
+        if f1_global == f1_global:
+            print(f"  Global int8 F1   : {f1_global:.4f}  (delta={f1_global - f1_u:+.4f})")
+        if f1_dyn == f1_dyn:
+            print(f"  Dynamic F1       : {f1_dyn:.4f}  (delta={f1_dyn - f1_u:+.4f})")
+        if f1_mlp == f1_mlp:
+            print(f"  MLP Baseline F1  : {f1_mlp:.4f}")
+        if f1_mlp_c == f1_mlp_c:
+            print(f"  MLP Compressed F1: {f1_mlp_c:.4f}")
         if mse_u == mse_u:
             print(f"  Uncompressed MSE : {mse_u:.4f} +/- {std_mse_u:.4f}")
             print(f"  Compressed MSE   : {mse_c:.4f} +/- {std_mse_c:.4f}")

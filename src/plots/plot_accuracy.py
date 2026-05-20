@@ -1,13 +1,16 @@
 import math
 import matplotlib.pyplot as plt
 from .save_utils import fig_path
+from .style import apply_style, METHOD_COLORS, PALETTE
 
 
-def plot_accuracy(methods, title="Accuracy Comparison", filename="accuracy.png"):
+def plot_accuracy(methods, title="Accuracy Comparison", filename="accuracy.png", ylabel="Accuracy"):
     """
     methods: dict of {label: value} or {label: (value, std)}
-    Filters out NaN entries automatically.
+    First entry is treated as the baseline (Uncompressed) for delta annotations.
     """
+    apply_style()
+
     labels, values, stds = [], [], []
     for label, entry in methods.items():
         if isinstance(entry, (list, tuple)):
@@ -20,28 +23,49 @@ def plot_accuracy(methods, title="Accuracy Comparison", filename="accuracy.png")
         values.append(v)
         stds.append(s)
 
-    colors = [
-        "steelblue", "orange", "seagreen", "mediumpurple", "firebrick",
-        "darkcyan", "saddlebrown",
-    ]
+    if not labels:
+        return
 
-    fig, ax = plt.subplots(figsize=(max(6, len(labels) * 1.4), 4))
-    bars = ax.bar(labels, values, color=colors[:len(labels)],
-                  yerr=[s if s > 0 else None for s in stds] if any(s > 0 for s in stds) else None,
-                  capsize=4, error_kw={"elinewidth": 1.2})
-    y_min = max(0.0, min(values) - 0.05)
-    ax.set_ylim(y_min, min(1.0, max(values) + 0.06))
-    ax.set_ylabel("Accuracy")
-    ax.set_title(title, pad=12)
-    plt.xticks(rotation=15, ha="right")
+    colors = [METHOD_COLORS.get(lbl, PALETTE[i % len(PALETTE)]) for i, lbl in enumerate(labels)]
+    has_err = any(s > 0 for s in stds)
+    baseline = values[0]
 
-    for i, (v, s) in enumerate(zip(values, stds)):
-        label = f"{v:.3f}"
-        if s > 0:
-            label += f"\n±{s:.3f}"
-        ax.text(i, v + (max(stds) if any(s > 0 for s in stds) else 0) + 0.005,
-                label, ha="center", va="bottom", fontsize=8)
+    fig, ax = plt.subplots(figsize=(max(5.5, len(labels) * 1.55), 4.8))
+
+    bars = ax.bar(
+        labels, values,
+        color=colors,
+        yerr=[s if s > 0 else float("nan") for s in stds] if has_err else None,
+        capsize=5,
+        error_kw={"elinewidth": 1.5, "ecolor": "#555555", "capthick": 1.5},
+        width=0.55,
+        zorder=3,
+        edgecolor="white",
+        linewidth=0.8,
+    )
+
+    # Dashed reference line at uncompressed baseline
+    ax.axhline(baseline, color="#666666", linestyle="--", linewidth=1.0, zorder=2, alpha=0.6)
+
+    err_top = max(stds) if has_err else 0.0
+    y_min = max(0.0, min(values) - 0.06)
+    y_max = min(1.0, max(values) + err_top + 0.10)
+    ax.set_ylim(y_min, y_max)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title, pad=24)
+    plt.xticks(rotation=20, ha="right")
+
+    tick_h = (y_max - y_min) * 0.015
+    for i, (lbl, v, s) in enumerate(zip(labels, values, stds)):
+        top = v + (s if s > 0 else 0) + tick_h
+        ax.text(i, top, f"{v:.4f}", ha="center", va="bottom", fontsize=8.5, fontweight="bold")
+        if i > 0:
+            delta = v - baseline
+            if abs(delta) > 1e-6:
+                d_color = "#2CA02C" if delta >= 0 else "#D62728"
+                ax.text(i, top + tick_h * 2, f"{delta:+.4f}",
+                        ha="center", va="bottom", fontsize=7.5, color=d_color)
 
     plt.tight_layout()
-    plt.savefig(fig_path(filename), dpi=300, bbox_inches="tight")
+    plt.savefig(fig_path(filename), dpi=150, bbox_inches="tight")
     plt.close()

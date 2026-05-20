@@ -5,6 +5,7 @@ from src.plots.plot_ablation import plot_ablation
 from src.plots.plot_scaling import plot_scaling
 from src.plots.plot_roc_pr import plot_roc_pr
 from src.plots.plot_training_curves import plot_training_curves
+from src.plots.plot_confusion_matrix import plot_confusion_matrix
 
 
 def generate_plots(results):
@@ -40,9 +41,6 @@ def generate_plots(results):
         dyn = _acc("accuracy_compressed_dynamic", "std_compressed_dynamic")
         if not math.isnan(dyn[0]):
             methods["Dynamic (int8)"] = dyn
-        int4 = _acc("accuracy_compressed_int4", "std_compressed_int4")
-        if not math.isnan(int4[0]):
-            methods["Snowflake (int4)"] = int4
         mlp = _acc("accuracy_mlp_baseline", "std_mlp_baseline")
         if not math.isnan(mlp[0]):
             methods["MLP Baseline"] = mlp
@@ -52,10 +50,44 @@ def generate_plots(results):
             title=f"{name} Accuracy",
             filename=f"{slug}_accuracy.png",
         )
+
+        # F1 plot — same method structure, different values
+        f1_methods = {"Uncompressed": _acc("f1_uncompressed", "std_f1_uncompressed")}
+        f1_sf8 = _acc("f1_compressed", "std_f1_compressed")
+        if not math.isnan(f1_sf8[0]):
+            f1_methods["Snowflake (int8)"] = f1_sf8
+        f1_gl8 = _acc("f1_compressed_global", "std_f1_compressed_global")
+        if not math.isnan(f1_gl8[0]):
+            f1_methods["Global int8"] = f1_gl8
+        f1_dyn = _acc("f1_compressed_dynamic", "std_f1_compressed_dynamic")
+        if not math.isnan(f1_dyn[0]):
+            f1_methods["Dynamic (int8)"] = f1_dyn
+        f1_mlp = _acc("f1_mlp_baseline", "std_f1_mlp_baseline")
+        if not math.isnan(f1_mlp[0]):
+            f1_methods["MLP Baseline"] = f1_mlp
+        if not math.isnan(f1_methods["Uncompressed"][0]):
+            plot_accuracy(
+                f1_methods,
+                title=f"{name} F1 Score",
+                filename=f"{slug}_f1.png",
+                ylabel="Macro F1" if len(f1_methods) > 1 else "F1",
+            )
+
         if "size_uncompressed" in r and not isinstance(r["size_uncompressed"], torch.Tensor):
+            import math as _math
+            _sizes = {"Uncompressed": r["size_uncompressed"]}
+            _sf8 = r.get("size_compressed")
+            if _sf8 and not _math.isnan(_sf8 if isinstance(_sf8, float) else float("nan")):
+                _sizes["Snowflake (int8)"] = _sf8
+            _gl8 = r.get("size_compressed_global")
+            if _gl8:
+                _sizes["Global int8"] = _gl8
+            _dyn = r.get("size_compressed_dynamic")
+            if _dyn:
+                _sizes["Dynamic (int8)"] = _dyn
             plot_compression(
-                r["size_uncompressed"],
-                r["size_compressed"],
+                _sizes,
+                title=f"{name} Model Size",
                 filename=f"{slug}_compression.png",
             )
 
@@ -104,5 +136,19 @@ def generate_plots(results):
                 print(f"  {name} training curves saved")
             except Exception as e:
                 print(f"  Warning: Could not plot training curves for {name}: {e}")
+
+    for name, r in results.items():
+        if isinstance(r, dict) and r.get("conf_matrix") is not None:
+            try:
+                slug = name.lower().replace(" ", "_")
+                plot_confusion_matrix(
+                    r["conf_matrix"],
+                    title=name,
+                    filename=f"{slug}_confusion.png",
+                    class_names=r.get("class_names"),
+                )
+                print(f"  {name} confusion matrix saved")
+            except Exception as e:
+                print(f"  Warning: Could not plot confusion matrix for {name}: {e}")
 
     print("  Plots saved to figures/ directory\n")

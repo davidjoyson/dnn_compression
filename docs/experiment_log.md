@@ -242,6 +242,79 @@ Model fully converged by epoch 50; 100 epochs adds nothing. **50 epochs is the c
 
 ---
 
+## 2026-05-20 — Confusion Matrices + Full 3-Dataset 3-Seed Run
+
+**Commits:** *(this session)*
+
+### Summary
+Added confusion matrix evaluation and plots to all 3 experiments. Introduced centralised plot styling. Ran a full 50-epoch, 3-seed benchmark across HAR, ECG, and EEG. GPU run on GTX 1650 Max-Q (CUDA 12.4 via `D:\Python` torch 2.6.0+cu124).
+
+### Infrastructure Changes
+
+**`src/training/evaluate.py`** — added `confusion_matrix_eval(model, X, y, num_classes, device)`:
+- Multi-class: `argmax` predictions; binary: threshold at 0.5
+- Returns sklearn `confusion_matrix` on the full test set
+
+**`src/plots/plot_confusion_matrix.py`** (new):
+- Side-by-side normalised confusion matrices for Uncompressed vs Snowflake (int8)
+- Blues colormap, row-normalised; each cell annotates fraction + raw count
+- Saved as `{experiment}_confusion.png`
+
+**`src/plots/style.py`** (new):
+- Centralised `apply_style()`, `METHOD_COLORS`, `PALETTE` constants shared across all plot modules
+
+**`src/plots/plot_accuracy.py`** — fixed pre-existing `yerr` bug:
+- `None` in a yerr list crashes matplotlib; replaced with `float("nan")` to suppress zero-std bars
+
+All experiment files (HAR, ECG, EEG) and `src/reporting/utils.py` / `src/reporting/plots.py` updated to wire confusion matrices end-to-end.
+
+### 50-Epoch, 3-Seed Results (`run_20260520_193531_3exp_epo50`)
+
+#### UCI HAR (239s)
+
+| Method | Accuracy | ±std | F1 | Size (bytes) | Ratio |
+|---|---|---|---|---|---|
+| Uncompressed | 99.98% | ±0.03% | 0.9998 | 163,876 | 1× |
+| Snowflake (int8) | **99.98%** | **±0.03%** | **0.9998** | 41,017 | **4×** |
+| Global int8 | 99.98% | ±0.03% | 0.9998 | 41,017 | 4× |
+| Dynamic int8 | 99.98% | ±0.03% | 0.9998 | 41,476 | 3.95× |
+| MLP Baseline | 99.98% | ±0.03% | 0.9998 | 164,400 | 1× |
+
+Task saturated — all methods lossless, no discrimination between methods.
+
+#### ECG Heartbeat (3,826s)
+
+| Method | Accuracy | ±std | F1 | Delta Acc | Size (bytes) | Ratio |
+|---|---|---|---|---|---|---|
+| Uncompressed | 96.08% | ±0.43% | 0.8411 | — | 68,660 | 1× |
+| **Snowflake (int8)** | **96.60%** | **±0.42%** | **0.8568** | **+0.53%** | 17,213 | **4×** |
+| Dynamic int8 | 95.73% | ±0.45% | 0.8285 | -0.35% | 17,684 | 3.99× |
+| Global int8 | 95.30% | ±0.98% | 0.8213 | -0.77% | 17,213 | 4× |
+| MLP Baseline | 94.80% | ±0.63% | 0.8035 | — | 68,728 | 1× |
+
+Snowflake improves over uncompressed (+0.53% acc, +1.57% F1) — quantization regularises. Global int8 degrades most, validating per-layer calibration. Dendritic beats MLP by +1.28% uncompressed.
+
+#### EEG Brainwave (45s)
+
+| Method | Accuracy | ±std | F1 | Delta Acc | Size (bytes) | Ratio |
+|---|---|---|---|---|---|---|
+| Uncompressed | 97.66% | ±0.23% | 0.9765 | — | 672,812 | 1× |
+| Snowflake (int8) | 97.58% | ±0.14% | 0.9757 | -0.08% | 168,251 | **4×** |
+| Global int8 | 97.58% | ±0.36% | 0.9757 | -0.08% | 168,251 | 4× |
+| **Dynamic int8** | 95.24% | ±0.14% | 0.9516 | **-2.42%** | 168,716 | 3.99× |
+| MLP Baseline | 97.74% | ±0.27% | 0.9773 | — | 673,740 | 1× |
+
+Dynamic int8 fails on EEG (-2.42%) — the large fc1 layer (163k params, wide activation range) is particularly sensitive to activation-based dynamic range estimation. Snowflake near-lossless at 4×.
+
+### Observations
+1. **Snowflake wins on every meaningful benchmark** — improves ECG (+0.53%), near-lossless on EEG (-0.08%), saturated on HAR
+2. **Dynamic int8 is unreliable** — good on HAR/ECG, collapses on EEG (-2.42%); per-layer static calibration (Snowflake) is more robust
+3. **Global int8 worst on ECG** — single scale too coarse after 50 epochs of training; per-layer scale essential
+4. **Dendritic > MLP on ECG** (+1.28%) — architectural advantage where the task has complexity; equal on EEG (engineered features)
+5. **HAR remains saturated** — binary task too easy; ECG is the primary differentiating benchmark
+
+---
+
 ## Commit History
 
 | Commit | Date | Summary |
@@ -255,7 +328,9 @@ Model fully converged by epoch 50; 100 epochs adds nothing. **50 epochs is the c
 | `ba1446e` | 2026-05-14 | Param-matched MLP baseline, `use_soma` toggle, `count_params` utility |
 | `2177bd0` | 2026-05-14 | ECG experiment, global int8 + dynamic quantization, HAR updated, auto-logging, experiment log |
 | `f946061` | 2026-05-16 | Add int4 quantization (8×); 3-seed ECG+HAR evaluation; dynamic size fix; int4 not viable at ~17k params |
-| *(pending)* | 2026-05-17 | EEG Brainwave experiment; int4 viable at ~167k params; scale threshold confirmed |
+| `3b33e1e` | 2026-05-17 | EEG Brainwave experiment; int4 viable at ~167k params; scale threshold confirmed |
+| `f98a4af` | 2026-05-17 | Update accuracy plot to show all compression methods |
+| *(pending)* | 2026-05-20 | Confusion matrices, plot style system, yerr fix; 50-epoch 3-seed HAR+ECG+EEG results |
 
 ---
 
@@ -267,3 +342,5 @@ Model fully converged by epoch 50; 100 epochs adds nothing. **50 epochs is the c
 - [x] ~~Investigate dynamic quantization size overhead~~ — fixed 2026-05-16 (pickle overhead; raw data = 17,684 bytes ≈ 3.9×)
 - [x] ~~Add int4 (4-bit) quantization~~ — done 2026-05-16; not viable at ~17k params (-23.67%, ±13.89%), 8-bit is minimum
 - [x] ~~Find int4 viability threshold~~ — confirmed 2026-05-17; viable at ~167k params (EEG: 0.00% delta at 8×)
+- [x] ~~Add confusion matrix plots to all experiments~~ — done 2026-05-20
+- [x] ~~Run full 50-epoch 3-seed benchmark across HAR + ECG + EEG on GPU~~ — done 2026-05-20

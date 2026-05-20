@@ -36,6 +36,41 @@ def mse_score(model, X, y, device=None):
         return ((model(X) - y) ** 2).mean().item()
 
 
+def f1_eval(model, X, y, num_classes=1, device=None):
+    from sklearn.metrics import f1_score
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+    X = X.to(device)
+    y = y.to(device)
+    model.eval()
+    with torch.no_grad():
+        if num_classes > 1:
+            preds = model(X).argmax(dim=1).cpu().numpy()
+            return float(f1_score(y.cpu().numpy(), preds, average="macro", zero_division=0))
+        else:
+            preds = (model(X) > 0.5).float().cpu().numpy().ravel()
+            return float(f1_score(y.cpu().numpy().ravel(), preds, zero_division=0))
+
+
+def confusion_matrix_eval(model, X, y, num_classes=1, device=None):
+    from sklearn.metrics import confusion_matrix
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+    X = X.to(device)
+    y = y.to(device)
+    model.eval()
+    with torch.no_grad():
+        if num_classes > 1:
+            preds = model(X).argmax(dim=1).cpu().numpy()
+            labels = y.cpu().numpy()
+        else:
+            preds = (model(X) > 0.5).float().cpu().numpy().ravel()
+            labels = y.cpu().numpy().ravel()
+    return confusion_matrix(labels, preds)
+
+
 def predict_proba(model, X, device=None):
     """Return raw sigmoid probabilities as a CPU numpy array."""
     if device is None:
@@ -45,3 +80,5 @@ def predict_proba(model, X, device=None):
     model.eval()
     with torch.no_grad():
         return model(X).cpu().numpy().ravel()
+
+
