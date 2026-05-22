@@ -1,4 +1,6 @@
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 def param_matched_hidden(total_params, input_dim, num_classes=1):
@@ -14,13 +16,39 @@ class MLPBaseline(nn.Module):
         super().__init__()
         self.num_classes = num_classes
         out_dim = max(1, num_classes)
-        layers = [nn.Linear(input_dim, hidden), nn.ReLU(), nn.Linear(hidden, out_dim)]
-        if num_classes == 1:
-            layers.append(nn.Sigmoid())
-        self.net = nn.Sequential(*layers)
+
+        # Hidden layer
+        self.fc1 = nn.Linear(input_dim, hidden)
+
+        # Output layer
+        self.out = nn.Linear(hidden, out_dim)
 
     def forward(self, x):
-        return self.net(x)
+        # Hidden layer
+        x = F.relu(self.fc1(x))
 
+        # Output
+        x = self.out(x)
+        if self.num_classes == 1:
+            return torch.sigmoid(x)
+        return x
+
+    # ---------------------------------------------------------
+    # Size in bytes (for uncompressed model)
+    # ---------------------------------------------------------
     def size_bytes(self):
-        return sum(p.nelement() * p.element_size() for p in self.parameters())
+        total = 0
+        for p in self.parameters():
+            total += p.nelement() * p.element_size()
+        return total
+
+    # ---------------------------------------------------------
+    # Print architecture summary
+    # ---------------------------------------------------------
+    def print_arch(self):
+        fc1 = self.fc1
+        out = self.out
+        print(f"MLPBaseline")
+        print(f"  fc1 : Linear({fc1.in_features} → {fc1.out_features})")
+        print(f"  out : Linear({out.in_features} → {out.out_features})")
+        print(f"  params: {sum(p.numel() for p in self.parameters()):,}")

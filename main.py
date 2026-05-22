@@ -186,6 +186,7 @@ def main():
         print(f"Size: {dendritic.size_bytes():,} bytes")
         print("\n=== MLPBaseline ===")
         summary(mlp, input_size=(1, input_dim))
+        print(f"Size: {mlp.size_bytes():,} bytes")
         return
 
     n = len(args.exp)

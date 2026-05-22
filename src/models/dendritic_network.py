@@ -15,7 +15,6 @@ class DendriticNetwork(nn.Module):
         num_classes=1,
     ):
         super().__init__()
-        self.branch_weights = None
         self.use_soma = use_soma
         self.num_classes = num_classes
         # Layer 1
@@ -37,9 +36,6 @@ class DendriticNetwork(nn.Module):
         # Output layer
         self.out = nn.Linear(hidden_neurons2, max(1, num_classes))
 
-    # ---------------------------------------------------------
-    # REQUIRED FOR PYTORCH
-    # ---------------------------------------------------------
     def forward(self, x):
 
         # First layer
@@ -74,3 +70,22 @@ class DendriticNetwork(nn.Module):
         for p in self.parameters():
             total += p.nelement() * p.element_size()
         return total
+
+    # ---------------------------------------------------------
+    # Print architecture summary
+    # ---------------------------------------------------------
+    def print_arch(self):
+        fc1   = self.fc1
+        b0    = self.branches[0]
+        fc2   = self.fc2
+        out   = self.out
+        n     = len(self.branches)
+        print(f"DendriticNetwork")
+        print(f"  fc1     : Linear({fc1.in_features} → {fc1.out_features})")
+        print(f"  branches: {n} × Linear({b0.in_features} → {b0.out_features})")
+        if self.use_soma:
+            s = self.soma
+            print(f"  soma    : Linear({s.in_features} → {s.out_features})")
+        print(f"  fc2     : Linear({fc2.in_features} → {fc2.out_features})")
+        print(f"  out     : Linear({out.in_features} → {out.out_features})")
+        print(f"  params  : {sum(p.numel() for p in self.parameters()):,}")
