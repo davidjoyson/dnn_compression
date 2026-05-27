@@ -149,6 +149,9 @@ def run_har(epochs=50, seeds=(42,), fine_tune_epochs=3):
             size_mlp_u = mlp.size_bytes()
             size_mlp_c = compressed_size_bytes(compressed_mlp)
 
+        if "mlp_ms" not in inference_times:
+            inference_times["mlp_ms"] = _time_ms(mlp)
+
         if loss_history is None:
             loss_history = {
                 "Dendritic (Uncompressed)": hist_u,
@@ -232,4 +235,5 @@ def run_har(epochs=50, seeds=(42,), fine_tune_epochs=3):
         "inference_time_uncompressed_ms": inference_times["uncompressed_ms"] if inference_times else None,
         "inference_time_compressed_ms":   inference_times["compressed_ms"]   if inference_times else None,
         "inference_time_dynamic_ms":      inference_times["dynamic_ms"]      if inference_times else None,
+        "inference_time_mlp_ms":          inference_times["mlp_ms"]          if inference_times else None,
     }
