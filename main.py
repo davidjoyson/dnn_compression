@@ -3,18 +3,13 @@ import os
 import sys
 import time
 
-import torch
 from tqdm import tqdm
 
-from src.experiments.uci_adult_experiment import run_uci_adult_income
-from src.experiments.folktables_experiment import run_folktables_income
 from src.experiments.ablation_study import run_ablation, run_compression_component_ablation
-from src.experiments.scaling_experiment import run_scaling_experiment
 from src.experiments.har_experiment import run_har
 from src.experiments.ecg_experiment import run_ecg
 from src.experiments.eeg_experiment import run_eeg
 
-from src.loaders.load_adult import load_adult_income
 from src.loaders.load_wine import load_wine
 
 from src.models.dendritic_network import DendriticNetwork
@@ -36,8 +31,7 @@ SEEDS  = (42, 0, 7)
 EPOCHS = 50
 
 ALL_EXPERIMENTS = [
-    # "adult", "folktables",
-    "ablation", "component",  # "scaling",
+    "ablation", "component",
     "har", "ecg", "eeg",
 ]
 
@@ -59,22 +53,6 @@ class _Tee:
 # ------------------------------------------------------------------ #
 # Experiment runners (each fills results + timings)                   #
 # ------------------------------------------------------------------ #
-
-def _run_adult(results, timings, epochs, seeds, fine_tune_epochs=3):
-    print("\n=== UCI Adult Income ===\n")
-    t0 = time.time()
-    store_simple(results, timings, "UCI Adult Income",
-                 run_uci_adult_income(epochs=epochs, seeds=seeds, fine_tune_epochs=fine_tune_epochs),
-                 time.time() - t0)
-
-
-def _run_folktables(results, timings, epochs, seeds):
-    print("\n=== Folktables CA 2018 ===\n")
-    t0 = time.time()
-    store_simple(results, timings, "Folktables CA 2018",
-                 run_folktables_income("CA", 2018, epochs=epochs),
-                 time.time() - t0)
-
 
 def _run_ablation(results, timings, epochs, seeds):
     print("\n=== Ablation Study ===\n")
@@ -103,21 +81,6 @@ def _run_component(results, timings, epochs, seeds):
     timings["Component Ablation"] = time.time() - t0
 
 
-def _run_scaling(results, timings, epochs, seeds):
-    print("\n=== Scaling Experiment ===\n")
-    X_raw, y_raw = load_adult_income()
-    X = torch.tensor(X_raw, dtype=torch.float32)
-    y = torch.tensor(y_raw, dtype=torch.float32).reshape(-1, 1)
-    split = int(0.8 * len(X))
-    t0 = time.time()
-    results["Scaling Experiment"] = run_scaling_experiment(
-        X_train=X[:split], y_train=y[:split], X_test=X[split:], y_test=y[split:],
-        neurons1_list=[16, 32], neurons2_list=[8, 16], branches_list=[2, 4],
-        hidden_per_branch=4, epochs=epochs,
-    )
-    timings["Scaling Experiment"] = time.time() - t0
-
-
 def _run_har(results, timings, epochs, seeds, fine_tune_epochs=3):
     print("\n=== UCI HAR (Wearable Sensors) ===\n")
     t0 = time.time()
@@ -143,14 +106,11 @@ def _run_eeg(results, timings, epochs, seeds, fine_tune_epochs=3):
 
 
 REGISTRY = {
-    "adult":      _run_adult,
-    "folktables": _run_folktables,
-    "ablation":   _run_ablation,
-    "component":  _run_component,
-    "scaling":     _run_scaling,
-    "har":         _run_har,
-    "ecg":         _run_ecg,
-    "eeg":         _run_eeg,
+    "ablation":  _run_ablation,
+    "component": _run_component,
+    "har":       _run_har,
+    "ecg":       _run_ecg,
+    "eeg":       _run_eeg,
 }
 
 # ------------------------------------------------------------------ #
@@ -169,7 +129,7 @@ def main():
     parser.add_argument("--epochs", type=int, default=EPOCHS,
                         help=f"Training epochs per experiment (default: {EPOCHS})")
     parser.add_argument("--fine-tune-epochs", type=int, default=3,
-                        help="Post-quantization fine-tuning epochs for adult/har (default: 3)")
+                        help="Post-quantization fine-tuning epochs for har/ecg/eeg (default: 3)")
     parser.add_argument("--seeds", type=int, nargs="+", default=list(SEEDS),
                         help=f"Random seeds to average over (default: {list(SEEDS)})")
     parser.add_argument("--arch", action="store_true", help="Print model architectures and exit")
@@ -204,7 +164,7 @@ def main():
     print(f"    Output dir: {run_dir}")
     print(f"    Log file  : {log_path}\n")
 
-    _fine_tune_runners = {"adult", "har", "ecg", "eeg"}
+    _fine_tune_runners = {"har", "ecg", "eeg"}
 
     results, timings = {}, {}
     pbar = tqdm(total=len(args.exp), desc="Experiments", colour="cyan")

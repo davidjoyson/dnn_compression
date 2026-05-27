@@ -2,7 +2,6 @@ from .utils import to_float
 from src.plots.plot_accuracy import plot_accuracy
 from src.plots.plot_compression import plot_compression
 from src.plots.plot_ablation import plot_ablation
-from src.plots.plot_scaling import plot_scaling
 from src.plots.plot_roc_pr import plot_roc_pr
 from src.plots.plot_training_curves import plot_training_curves
 from src.plots.plot_confusion_matrix import plot_confusion_matrix
@@ -90,18 +89,6 @@ def generate_plots(results):
                 title=f"{name} Model Size",
                 filename=f"{slug}_compression.png",
             )
-
-    if "Scaling Experiment" in results:
-        try:
-            plot_scaling(
-                results["Scaling Experiment"],
-                neurons1_list=[16, 32],
-                neurons2_list=[8, 16],
-                branches_list=[2, 4],
-            )
-            print("  Scaling plots saved")
-        except Exception as e:
-            print(f"  Warning: Could not plot scaling: {e}")
 
     if "Ablation Study" in results and isinstance(results["Ablation Study"], list):
         try:
