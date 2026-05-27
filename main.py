@@ -77,7 +77,7 @@ def _run_component(results, timings, epochs, seeds):
     results["Component Ablation"] = run_compression_component_ablation(
         X_train=X_raw_tr, y_train=y_raw_tr, X_test=X_raw_te, y_test=y_raw_te,
         config={"h1": 32, "h2": 16, "branches": 4, "hidden_per_branch": 4},
-        epochs=epochs, seeds=seeds, num_classes=5,
+        epochs=epochs, seeds=seeds[:1], num_classes=5,
     )
     timings["Component Ablation"] = time.time() - t0
 
