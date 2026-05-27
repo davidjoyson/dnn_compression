@@ -42,13 +42,3 @@ class MLPBaseline(nn.Module):
             total += p.nelement() * p.element_size()
         return total
 
-    # ---------------------------------------------------------
-    # Print architecture summary
-    # ---------------------------------------------------------
-    def print_arch(self):
-        fc1 = self.fc1
-        out = self.out
-        print(f"MLPBaseline")
-        print(f"  fc1 : Linear({fc1.in_features} → {fc1.out_features})")
-        print(f"  out : Linear({out.in_features} → {out.out_features})")
-        print(f"  params: {sum(p.numel() for p in self.parameters()):,}")

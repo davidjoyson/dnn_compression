@@ -71,21 +71,3 @@ class DendriticNetwork(nn.Module):
             total += p.nelement() * p.element_size()
         return total
 
-    # ---------------------------------------------------------
-    # Print architecture summary
-    # ---------------------------------------------------------
-    def print_arch(self):
-        fc1   = self.fc1
-        b0    = self.branches[0]
-        fc2   = self.fc2
-        out   = self.out
-        n     = len(self.branches)
-        print(f"DendriticNetwork")
-        print(f"  fc1     : Linear({fc1.in_features} → {fc1.out_features})")
-        print(f"  branches: {n} × Linear({b0.in_features} → {b0.out_features})")
-        if self.use_soma:
-            s = self.soma
-            print(f"  soma    : Linear({s.in_features} → {s.out_features})")
-        print(f"  fc2     : Linear({fc2.in_features} → {fc2.out_features})")
-        print(f"  out     : Linear({out.in_features} → {out.out_features})")
-        print(f"  params  : {sum(p.numel() for p in self.parameters()):,}")
