@@ -1,3 +1,6 @@
+import copy
+import time
+import numpy as np
 import torch
 from sklearn.model_selection import train_test_split
 
@@ -27,6 +30,9 @@ def run_eeg(epochs=50, seeds=(42,), fine_tune_epochs=3):
     size_global, size_dynamic = None, None
     size_mlp_u, size_mlp_c = None, None
     loss_history = None
+    weight_dist = None
+    val_acc_history = None
+    inference_times = None
 
     X_raw_tr, y_raw_tr, X_raw_test, y_raw_test = load_eeg()
 
@@ -62,10 +68,17 @@ def run_eeg(epochs=50, seeds=(42,), fine_tune_epochs=3):
 
         original_state = {k: v.cpu().clone() for k, v in model_u.state_dict().items()}
 
+        if weight_dist is None:
+            weights_before = np.concatenate([p.data.cpu().numpy().ravel() for p in model_u.parameters()])
+
         # Snowflake: per-layer int8
         compressed = compress_model(model_u, fine_tune_data=(X_train, y_train),
                                     fine_tune_epochs=fine_tune_epochs)
         decompress_model(compressed, model_u)
+
+        if weight_dist is None:
+            weights_after = np.concatenate([p.data.cpu().numpy().ravel() for p in model_u.parameters()])
+            weight_dist = {"before": weights_before, "after": weights_after}
         acc_c_list.append(evaluate(model_u, X_test, y_test, num_classes=NUM_CLASSES))
         f1_c_list.append(f1_eval(model_u, X_test, y_test, num_classes=NUM_CLASSES))
         conf_matrix_c = confusion_matrix_eval(model_u, X_test, y_test, num_classes=NUM_CLASSES)
@@ -89,6 +102,23 @@ def run_eeg(epochs=50, seeds=(42,), fine_tune_epochs=3):
             size_c = compressed_size_bytes(compressed)
             size_global = compressed_size_bytes(compressed_global)
             size_dynamic = dynamic_model_size_bytes(model_dynamic)
+
+        if inference_times is None:
+            model_u.load_state_dict(original_state)
+            X_cpu = X_test.cpu()
+            def _time_ms(m, n_runs=30):
+                m_cpu = m.cpu().eval()
+                with torch.no_grad():
+                    _ = m_cpu(X_cpu[:1])
+                    t0 = time.perf_counter()
+                    for _ in range(n_runs):
+                        _ = m_cpu(X_cpu)
+                return (time.perf_counter() - t0) / n_runs * 1000
+            inference_times = {
+                "uncompressed_ms": _time_ms(model_u),
+                "compressed_ms":   _time_ms(copy.deepcopy(model_u)),
+                "dynamic_ms":      _time_ms(model_dynamic),
+            }
 
         mlp = MLPBaseline(
             input_dim=X_train.shape[1],
@@ -115,9 +145,13 @@ def run_eeg(epochs=50, seeds=(42,), fine_tune_epochs=3):
         if loss_history is None:
             loss_history = {
                 "Dendritic (Uncompressed)": hist_u,
-                "Dendritic (Val)":          val_hist_u,
+                "Dendritic (Val)":          val_hist_u["loss"],
                 "MLP Baseline":             hist_mlp,
-                "MLP (Val)":                val_hist_mlp,
+                "MLP (Val)":                val_hist_mlp["loss"],
+            }
+            val_acc_history = {
+                "Dendritic": val_hist_u["acc"],
+                "MLP":       val_hist_mlp["acc"],
             }
 
     n      = len(seeds)
@@ -165,8 +199,13 @@ def run_eeg(epochs=50, seeds=(42,), fine_tune_epochs=3):
             "mlp_uncompressed":   size_mlp_u,
             "mlp_compressed":     size_mlp_c,
         },
-        "num_seeds":    n,
-        "loss_history": loss_history,
-        "conf_matrix": {"uncompressed": conf_matrix_u, "compressed": conf_matrix_c},
-        "class_names": ["Negative", "Neutral", "Positive"],
+        "num_seeds":        n,
+        "loss_history":     loss_history,
+        "val_acc_history":  val_acc_history,
+        "conf_matrix":      {"uncompressed": conf_matrix_u, "compressed": conf_matrix_c},
+        "class_names":      ["Negative", "Neutral", "Positive"],
+        "weight_dist":      weight_dist,
+        "inference_time_uncompressed_ms": inference_times["uncompressed_ms"] if inference_times else None,
+        "inference_time_compressed_ms":   inference_times["compressed_ms"]   if inference_times else None,
+        "inference_time_dynamic_ms":      inference_times["dynamic_ms"]      if inference_times else None,
     }

@@ -10,7 +10,7 @@ from src.experiments.har_experiment import run_har
 from src.experiments.ecg_experiment import run_ecg
 from src.experiments.eeg_experiment import run_eeg
 
-from src.loaders.load_wine import load_wine
+from src.loaders.load_ecg import load_ecg
 
 from src.models.dendritic_network import DendriticNetwork
 from src.models.mlp_baseline import MLPBaseline
@@ -56,7 +56,7 @@ class _Tee:
 
 def _run_ablation(results, timings, epochs, seeds):
     print("\n=== Ablation Study ===\n")
-    X_tr, y_tr, X_te, y_te = load_wine()
+    X_tr, y_tr, X_te, y_te = load_ecg()
     configs = [
         {"h1": 16, "h2":  8, "branches": 2, "hidden_per_branch": 4},
         {"h1": 32, "h2": 16, "branches": 4, "hidden_per_branch": 4},
@@ -64,19 +64,20 @@ def _run_ablation(results, timings, epochs, seeds):
     ]
     t0 = time.time()
     results["Ablation Study"] = run_ablation(
-        configs=configs, X_train=X_tr, y_train=y_tr, X_test=X_te, y_test=y_te, epochs=epochs,
+        configs=configs, X_train=X_tr, y_train=y_tr, X_test=X_te, y_test=y_te,
+        epochs=epochs, num_classes=5,
     )
     timings["Ablation Study"] = time.time() - t0
 
 
 def _run_component(results, timings, epochs, seeds):
     print("\n=== Component Ablation ===\n")
-    X_tr, y_tr, X_te, y_te = load_wine()
+    X_tr, y_tr, X_te, y_te = load_ecg()
     t0 = time.time()
     results["Component Ablation"] = run_compression_component_ablation(
         X_train=X_tr, y_train=y_tr, X_test=X_te, y_test=y_te,
         config={"h1": 32, "h2": 16, "branches": 4, "hidden_per_branch": 4},
-        epochs=epochs, seeds=seeds,
+        epochs=epochs, seeds=seeds, num_classes=5,
     )
     timings["Component Ablation"] = time.time() - t0
 

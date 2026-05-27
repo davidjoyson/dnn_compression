@@ -5,6 +5,12 @@ from src.plots.plot_ablation import plot_ablation
 from src.plots.plot_roc_pr import plot_roc_pr
 from src.plots.plot_training_curves import plot_training_curves
 from src.plots.plot_confusion_matrix import plot_confusion_matrix
+from src.plots.plot_cross_dataset import plot_cross_dataset_summary
+from src.plots.plot_pareto import plot_pareto
+from src.plots.plot_per_class_f1 import plot_per_class_f1
+from src.plots.plot_weight_dist import plot_weight_distribution
+from src.plots.plot_inference_time import plot_inference_time
+from src.plots.plot_val_accuracy import plot_val_accuracy
 
 
 def generate_plots(results):
@@ -76,7 +82,7 @@ def generate_plots(results):
             import math as _math
             _sizes = {"Uncompressed": r["size_uncompressed"]}
             _sf8 = r.get("size_compressed")
-            if _sf8 and not _math.isnan(_sf8 if isinstance(_sf8, float) else float("nan")):
+            if _sf8 is not None and not (isinstance(_sf8, float) and _math.isnan(_sf8)):
                 _sizes["Snowflake (int8)"] = _sf8
             _gl8 = r.get("size_compressed_global")
             if _gl8:
@@ -137,5 +143,58 @@ def generate_plots(results):
                 print(f"  {name} confusion matrix saved")
             except Exception as e:
                 print(f"  Warning: Could not plot confusion matrix for {name}: {e}")
+
+    # Cross-dataset summary + Pareto (need >=2 datasets with accuracy data)
+    ds_results = {
+        name: r for name, r in results.items()
+        if isinstance(r, dict) and "accuracy_uncompressed" in r
+        and not isinstance(r.get("accuracy_uncompressed"), list)
+    }
+    if len(ds_results) >= 2:
+        try:
+            plot_cross_dataset_summary(ds_results)
+            print("  Cross-dataset summary saved")
+        except Exception as e:
+            print(f"  Warning: Could not plot cross-dataset summary: {e}")
+        try:
+            plot_pareto(ds_results)
+            print("  Pareto plot saved")
+        except Exception as e:
+            print(f"  Warning: Could not plot pareto: {e}")
+        try:
+            plot_inference_time(ds_results)
+            print("  Inference time plot saved")
+        except Exception as e:
+            print(f"  Warning: Could not plot inference time: {e}")
+
+    # Per-dataset plots requiring new data
+    for name, r in results.items():
+        if not isinstance(r, dict):
+            continue
+        slug = name.lower().replace(" ", "_")
+
+        if r.get("conf_matrix") is not None and r.get("class_names") is not None:
+            try:
+                plot_per_class_f1(r["conf_matrix"], r["class_names"],
+                                  title=name, filename=f"{slug}_per_class_f1.png")
+                print(f"  {name} per-class F1 saved")
+            except Exception as e:
+                print(f"  Warning: Could not plot per-class F1 for {name}: {e}")
+
+        if r.get("weight_dist") is not None:
+            try:
+                plot_weight_distribution(r["weight_dist"], title=name,
+                                         filename=f"{slug}_weight_dist.png")
+                print(f"  {name} weight distribution saved")
+            except Exception as e:
+                print(f"  Warning: Could not plot weight dist for {name}: {e}")
+
+        if r.get("val_acc_history") is not None:
+            try:
+                plot_val_accuracy(r["val_acc_history"], title=name,
+                                  filename=f"{slug}_val_accuracy.png")
+                print(f"  {name} val accuracy curve saved")
+            except Exception as e:
+                print(f"  Warning: Could not plot val accuracy for {name}: {e}")
 
     print("  Plots saved to figures/ directory\n")

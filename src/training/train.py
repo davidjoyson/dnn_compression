@@ -38,7 +38,7 @@ def train(model, X, y, epochs=1, lr=1e-3, batch_size=64, use_tqdm=True,
 
     model.train()
     history = []
-    val_history = [] if X_val is not None else None
+    val_history = {"loss": [], "acc": []} if X_val is not None else None
 
     for epoch in range(epochs):
         if use_tqdm:
@@ -67,8 +67,14 @@ def train(model, X, y, epochs=1, lr=1e-3, batch_size=64, use_tqdm=True,
         if X_val is not None:
             model.eval()
             with torch.no_grad():
-                val_loss = loss_fn(model(X_val), y_val).item()
-            val_history.append(val_loss)
+                val_out = model(X_val)
+                val_loss = loss_fn(val_out, y_val).item()
+                if num_classes > 1:
+                    val_acc = val_out.argmax(dim=1).eq(y_val.long()).float().mean().item()
+                else:
+                    val_acc = (val_out > 0.5).float().eq(y_val).float().mean().item()
+            val_history["loss"].append(val_loss)
+            val_history["acc"].append(val_acc)
             model.train()
 
     if X_val is not None:

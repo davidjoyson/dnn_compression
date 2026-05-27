@@ -11,7 +11,7 @@ from src.compression.compression_pipeline import (
 from src.compression.topology_sharing import apply_topology_sharing
 
 
-def run_ablation(configs, X_train, y_train, X_test, y_test, epochs=50):
+def run_ablation(configs, X_train, y_train, X_test, y_test, epochs=50, num_classes=1):
     """
     configs: list of dicts with keys h1, h2, branches, hidden_per_branch.
     Trains one model per config and reports accuracy before/after compression.
@@ -19,9 +19,13 @@ def run_ablation(configs, X_train, y_train, X_test, y_test, epochs=50):
     results = []
 
     X_train = torch.tensor(X_train, dtype=torch.float32)
-    y_train = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1)
+    y_train = torch.tensor(y_train, dtype=torch.long if num_classes > 1 else torch.float32)
+    if num_classes == 1:
+        y_train = y_train.reshape(-1, 1)
     X_test  = torch.tensor(X_test,  dtype=torch.float32)
-    y_test  = torch.tensor(y_test,  dtype=torch.float32).reshape(-1, 1)
+    y_test  = torch.tensor(y_test,  dtype=torch.long if num_classes > 1 else torch.float32)
+    if num_classes == 1:
+        y_test = y_test.reshape(-1, 1)
 
     for cfg in configs:
         model_u = DendriticNetwork(
@@ -30,18 +34,19 @@ def run_ablation(configs, X_train, y_train, X_test, y_test, epochs=50):
             hidden_neurons2=cfg["h2"],
             branches=cfg["branches"],
             hidden_per_branch=cfg["hidden_per_branch"],
+            num_classes=num_classes,
         )
 
-        train(model_u, X_train, y_train, epochs=epochs)
-        acc_u = evaluate(model_u, X_test, y_test)
-        mse_u = mse_score(model_u, X_test, y_test)
+        train(model_u, X_train, y_train, epochs=epochs, num_classes=num_classes)
+        acc_u = evaluate(model_u, X_test, y_test, num_classes=num_classes)
+        mse_u = mse_score(model_u, X_test, y_test) if num_classes == 1 else float("nan")
 
         compressed = compress_model(model_u)
         size_c = compressed_size_bytes(compressed)
 
         decompress_model(compressed, model_u)
-        acc_c = evaluate(model_u, X_test, y_test)
-        mse_c = mse_score(model_u, X_test, y_test)
+        acc_c = evaluate(model_u, X_test, y_test, num_classes=num_classes)
+        mse_c = mse_score(model_u, X_test, y_test) if num_classes == 1 else float("nan")
 
         size_u = model_u.size_bytes()
 
@@ -59,7 +64,7 @@ def run_ablation(configs, X_train, y_train, X_test, y_test, epochs=50):
 
 
 def run_compression_component_ablation(
-    X_train, y_train, X_test, y_test, config, epochs=50, seeds=(42,)
+    X_train, y_train, X_test, y_test, config, epochs=50, seeds=(42,), num_classes=1
 ):
     """
     Isolates the contribution of each compression component on a single config.
@@ -73,9 +78,13 @@ def run_compression_component_ablation(
     Returns dict: condition → {"mean": float, "std": float}
     """
     X_train = torch.tensor(X_train, dtype=torch.float32)
-    y_train = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1)
+    y_train = torch.tensor(y_train, dtype=torch.long if num_classes > 1 else torch.float32)
+    if num_classes == 1:
+        y_train = y_train.reshape(-1, 1)
     X_test  = torch.tensor(X_test,  dtype=torch.float32)
-    y_test  = torch.tensor(y_test,  dtype=torch.float32).reshape(-1, 1)
+    y_test  = torch.tensor(y_test,  dtype=torch.long if num_classes > 1 else torch.float32)
+    if num_classes == 1:
+        y_test = y_test.reshape(-1, 1)
 
     acc_by_condition = {"none": [], "topo_only": [], "quant_only": [], "both": []}
     mse_by_condition = {"none": [], "topo_only": [], "quant_only": [], "both": []}
@@ -89,32 +98,35 @@ def run_compression_component_ablation(
             hidden_neurons2=config["h2"],
             branches=config["branches"],
             hidden_per_branch=config["hidden_per_branch"],
+            num_classes=num_classes,
         )
-        train(base_model, X_train, y_train, epochs=epochs)
+        train(base_model, X_train, y_train, epochs=epochs, num_classes=num_classes)
 
         # none: evaluate as-is
-        acc_by_condition["none"].append(evaluate(base_model, X_test, y_test))
-        mse_by_condition["none"].append(mse_score(base_model, X_test, y_test))
+        _mse = (lambda m: mse_score(m, X_test, y_test)) if num_classes == 1 else (lambda m: float("nan"))
+
+        acc_by_condition["none"].append(evaluate(base_model, X_test, y_test, num_classes=num_classes))
+        mse_by_condition["none"].append(_mse(base_model))
 
         # topo_only: share branch weights, stay in float32
         m_topo = copy.deepcopy(base_model)
         apply_topology_sharing(m_topo)
-        acc_by_condition["topo_only"].append(evaluate(m_topo, X_test, y_test))
-        mse_by_condition["topo_only"].append(mse_score(m_topo, X_test, y_test))
+        acc_by_condition["topo_only"].append(evaluate(m_topo, X_test, y_test, num_classes=num_classes))
+        mse_by_condition["topo_only"].append(_mse(m_topo))
 
         # quant_only: quantize without topology sharing (now the standard pipeline)
         m_quant = copy.deepcopy(base_model)
         compressed_q = compress_model(m_quant)
         decompress_model(compressed_q, m_quant)
-        acc_by_condition["quant_only"].append(evaluate(m_quant, X_test, y_test))
-        mse_by_condition["quant_only"].append(mse_score(m_quant, X_test, y_test))
+        acc_by_condition["quant_only"].append(evaluate(m_quant, X_test, y_test, num_classes=num_classes))
+        mse_by_condition["quant_only"].append(_mse(m_quant))
 
         # both: standard pipeline
         m_both = copy.deepcopy(base_model)
         compressed_both = compress_model(m_both)
         decompress_model(compressed_both, m_both)
-        acc_by_condition["both"].append(evaluate(m_both, X_test, y_test))
-        mse_by_condition["both"].append(mse_score(m_both, X_test, y_test))
+        acc_by_condition["both"].append(evaluate(m_both, X_test, y_test, num_classes=num_classes))
+        mse_by_condition["both"].append(_mse(m_both))
 
     def _stats(lst):
         n = len(lst)
