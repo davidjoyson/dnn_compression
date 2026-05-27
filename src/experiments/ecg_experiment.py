@@ -2,8 +2,6 @@ import copy
 import time
 import numpy as np
 import torch
-from sklearn.model_selection import train_test_split
-
 from src.loaders.load_ecg import load_ecg
 from src.training.train import train
 from src.training.evaluate import evaluate, f1_eval, confusion_matrix_eval
