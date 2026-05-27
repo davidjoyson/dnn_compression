@@ -11,6 +11,7 @@ from src.plots.plot_per_class_f1 import plot_per_class_f1
 from src.plots.plot_weight_dist import plot_weight_distribution
 from src.plots.plot_inference_time import plot_inference_time
 from src.plots.plot_val_accuracy import plot_val_accuracy
+from src.plots.plot_component_ablation import plot_component_ablation
 
 
 def generate_plots(results):
@@ -95,6 +96,14 @@ def generate_plots(results):
                 title=f"{name} Model Size",
                 filename=f"{slug}_compression.png",
             )
+
+    if "Component Ablation" in results and isinstance(results["Component Ablation"], dict):
+        try:
+            plot_component_ablation(results["Component Ablation"],
+                                    filename="component_ablation.png")
+            print("  Component ablation plot saved")
+        except Exception as e:
+            print(f"  Warning: Could not plot component ablation: {e}")
 
     if "Ablation Study" in results and isinstance(results["Ablation Study"], list):
         try:

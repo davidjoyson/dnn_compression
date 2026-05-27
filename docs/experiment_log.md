@@ -330,7 +330,49 @@ Dynamic int8 fails on EEG (-2.42%) — the large fc1 layer (163k params, wide ac
 | `f946061` | 2026-05-16 | Add int4 quantization (8×); 3-seed ECG+HAR evaluation; dynamic size fix; int4 not viable at ~17k params |
 | `3b33e1e` | 2026-05-17 | EEG Brainwave experiment; int4 viable at ~167k params; scale threshold confirmed |
 | `f98a4af` | 2026-05-17 | Update accuracy plot to show all compression methods |
-| *(pending)* | 2026-05-20 | Confusion matrices, plot style system, yerr fix; 50-epoch 3-seed HAR+ECG+EEG results |
+| `3e2acda` | 2026-05-20 | Confusion matrices, plot style system, yerr fix; 50-epoch 3-seed HAR+ECG+EEG results |
+| `25aa06a` | 2026-05-27 | Refactor MLP to match DNN code structure; add `print_arch` to both models |
+
+---
+
+## 2026-05-27 — Component Ablation → ECG + Plot Expansion + Smoke Test
+
+**Commits:** `25aa06a` + this session (uncommitted)
+
+### Summary
+Expanded the plot suite with 8 new plot types. Switched component ablation from EEG to ECG for consistency. Ran full smoke test (all experiments, 1 epoch, 1 seed) — exit code 0, all 21 plots generated cleanly.
+
+### Infrastructure Changes
+
+**New plot modules added:**
+- `plot_component_ablation.py` — bar chart for 4 compression conditions (none/topo_only/quant_only/both) with error bars and dashed baseline
+- `plot_per_class_f1.py` — per-class F1 bar chart derived from confusion matrix
+- `plot_weight_dist.py` — weight distribution histogram
+- `plot_val_accuracy.py` — validation accuracy curve over epochs
+- `plot_cross_dataset.py` — cross-dataset accuracy summary
+- `plot_pareto.py` — accuracy vs. compression ratio Pareto frontier
+- `plot_inference_time.py` — inference time comparison
+- `plot_roc_pr.py` — ROC + PR curves per method
+
+All new plots wired into `src/reporting/plots.py`.
+
+**Component ablation switched from EEG → ECG:**
+- `_run_component` now calls `load_ecg()`, `num_classes=5`
+- `load_eeg` import removed from `main.py`
+- Both ablation and component now run on ECG (consistent)
+- ETA impact: component now ~55 min per full run (was ~15 min on EEG)
+
+### Smoke Test Results — 1 epoch, 1 seed (42)
+*Output: `outputs/run_20260527_171001_all_epo1`*
+
+| Experiment | Uncompressed | Snowflake (int8) | Delta | Size after compression |
+|---|---|---|---|---|
+| UCI HAR | 100.00% | 99.95% | -0.05% | 163,876 → 41,017 B (4×) |
+| ECG Heartbeat | 67.42% | 78.62% | +11.21% | 68,660 → 17,213 B (4×) |
+| EEG Brainwave | 87.35% | 89.93% | +2.58% | 672,812 → 168,251 B (4×) |
+
+Note: ECG at 1 epoch is underfit (67%); converges to ~96% at 50 epochs.
+All 21 plots generated. Exit code 0.
 
 ---
 
@@ -344,3 +386,6 @@ Dynamic int8 fails on EEG (-2.42%) — the large fc1 layer (163k params, wide ac
 - [x] ~~Find int4 viability threshold~~ — confirmed 2026-05-17; viable at ~167k params (EEG: 0.00% delta at 8×)
 - [x] ~~Add confusion matrix plots to all experiments~~ — done 2026-05-20
 - [x] ~~Run full 50-epoch 3-seed benchmark across HAR + ECG + EEG on GPU~~ — done 2026-05-20
+- [x] ~~Add component ablation plot~~ — done 2026-05-27
+- [x] ~~Expand plot suite~~ — done 2026-05-27 (8 new plot types)
+- [ ] Run full 50-epoch 3-seed benchmark with component ablation on ECG (switched 2026-05-27, ETA ~3.5–4 hrs)

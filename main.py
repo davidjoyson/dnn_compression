@@ -72,10 +72,10 @@ def _run_ablation(results, timings, epochs, seeds):
 
 def _run_component(results, timings, epochs, seeds):
     print("\n=== Component Ablation ===\n")
-    X_tr, y_tr, X_te, y_te = load_ecg()
+    X_raw_tr, y_raw_tr, X_raw_te, y_raw_te = load_ecg()
     t0 = time.time()
     results["Component Ablation"] = run_compression_component_ablation(
-        X_train=X_tr, y_train=y_tr, X_test=X_te, y_test=y_te,
+        X_train=X_raw_tr, y_train=y_raw_tr, X_test=X_raw_te, y_test=y_raw_te,
         config={"h1": 32, "h2": 16, "branches": 4, "hidden_per_branch": 4},
         epochs=epochs, seeds=seeds, num_classes=5,
     )
