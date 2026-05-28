@@ -9,6 +9,7 @@ from src.experiments.ablation_study import run_ablation, run_compression_compone
 from src.experiments.har_experiment import run_har
 from src.experiments.ecg_experiment import run_ecg
 from src.experiments.eeg_experiment import run_eeg
+from src.experiments.hapt_experiment import run_hapt
 
 from src.loaders.load_ecg import load_ecg
 
@@ -32,7 +33,7 @@ EPOCHS = 50
 
 ALL_EXPERIMENTS = [
     "ablation", "component",
-    "har", "ecg", "eeg",
+    "har", "ecg", "eeg", "hapt",
 ]
 
 class _Tee:
@@ -106,12 +107,21 @@ def _run_eeg(results, timings, epochs, seeds, fine_tune_epochs=3):
                  time.time() - t0)
 
 
+def _run_hapt(results, timings, epochs, seeds, fine_tune_epochs=3):
+    print("\n=== HAPT (UCI Smartphone, 12-class) ===\n")
+    t0 = time.time()
+    store_simple(results, timings, "HAPT",
+                 run_hapt(epochs=epochs, seeds=seeds, fine_tune_epochs=fine_tune_epochs),
+                 time.time() - t0)
+
+
 REGISTRY = {
     "ablation":  _run_ablation,
     "component": _run_component,
     "har":       _run_har,
     "ecg":       _run_ecg,
     "eeg":       _run_eeg,
+    "hapt":      _run_hapt,
 }
 
 # ------------------------------------------------------------------ #
@@ -165,7 +175,7 @@ def main():
     print(f"    Output dir: {run_dir}")
     print(f"    Log file  : {log_path}\n")
 
-    _fine_tune_runners = {"har", "ecg", "eeg"}
+    _fine_tune_runners = {"har", "ecg", "eeg", "hapt"}
 
     results, timings = {}, {}
     pbar = tqdm(total=len(args.exp), desc="Experiments", colour="cyan")

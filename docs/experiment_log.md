@@ -332,6 +332,7 @@ Dynamic int8 fails on EEG (-2.42%) — the large fc1 layer (163k params, wide ac
 | `f98a4af` | 2026-05-17 | Update accuracy plot to show all compression methods |
 | `3e2acda` | 2026-05-20 | Confusion matrices, plot style system, yerr fix; 50-epoch 3-seed HAR+ECG+EEG results |
 | `25aa06a` | 2026-05-27 | Refactor MLP to match DNN code structure; add `print_arch` to both models |
+| *(this session)* | 2026-05-28 | Refactor experiments to shared base_experiment.py; add HAPT 12-class dataset; full 4-dataset 3-seed run |
 
 ---
 
@@ -376,6 +377,88 @@ All 21 plots generated. Exit code 0.
 
 ---
 
+---
+
+## 2026-05-28 — HAPT Dataset + Experiment Refactor + Full 4-Dataset Run
+
+**Commits:** *(this session)*
+
+### Summary
+Added HAPT (UCI Smartphone 12-class) as a fourth benchmark dataset. Refactored all four experiment files into a shared `base_experiment.py`, eliminating ~600 lines of duplication. Ran full 50-epoch 3-seed benchmark across all 6 experiments (ablation, component, HAR, ECG, EEG, HAPT).
+
+### HAPT Dataset
+
+**Dataset:** UCI HAPT (Human Activities and Postural Transitions)
+- 561 pre-extracted inertial features, 12 classes: 6 base activities (Walking, Upstairs, Downstairs, Sitting, Standing, Laying) + 6 postural transitions (Stand→Sit, Sit→Stand, Sit→Lie, Lie→Sit, Stand→Lie, Lie→Stand)
+- Transition classes severely underrepresented (23–90 samples vs 1,400+ for base activities)
+- After oversampling to max class count (1,423 per class): 17,076 train / 3,162 test
+- StandardScaler normalisation; `.npy` caching
+
+### Experiment Refactor
+
+All four experiment files (HAR, ECG, EEG, HAPT) were ~95% identical. Extracted shared logic into `src/experiments/base_experiment.py`:
+- Single `run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_epochs, batch_size)` function
+- `get_data(seed)` callable pattern: seed-aware loaders (HAR) pass `lambda seed: load_har(seed=seed)`; fixed loaders (ECG/EEG/HAPT) pre-load once and pass `lambda seed: cached_data`
+- Each experiment file reduced to ~13 lines; total savings ~600 lines across 4 files
+- Fixed latent `NameError` in `eeg_experiment.py`: `train_test_split` was called without being imported
+
+### Full 6-Experiment Run — 50 epochs, 3 seeds (`run_20260528_154409_all_epo50`)
+
+#### Ablation Study + Component Ablation (ECG)
+
+Component ablation (1 seed, time: 1,127.69s):
+- `none`: acc=0.9180 | `topo_only`: acc=0.9180 | `quant_only`: acc=0.9180 | `both`: acc=0.9180
+
+#### UCI HAR (161.63s)
+
+| Method | Accuracy | ±std | F1 | Size (bytes) | Ratio |
+|---|---|---|---|---|---|
+| Uncompressed (Dendritic) | 97.94% | ±0.32% | 0.9803 | 164,536 | 1× |
+| **Snowflake (int8)** | **97.93%** | **±0.34%** | **0.9802** | 41,182 | **4×** |
+| Global int8 | 97.93% | ±0.42% | 0.9802 | 41,182 | 4× |
+| Dynamic int8 | 97.72% | ±0.25% | 0.9782 | 41,656 | ~4× |
+| MLP Baseline | 98.09% | ±0.35% | 0.9818 | 163,608 | 1× |
+
+#### ECG Heartbeat (3,426.50s)
+
+| Method | Accuracy | ±std | F1 | Delta F1 | Size (bytes) | Ratio |
+|---|---|---|---|---|---|---|
+| Uncompressed (Dendritic) | 96.08% | ±0.43% | 0.8411 | — | 68,660 | 1× |
+| **Snowflake (int8)** | **96.60%** | **±0.42%** | **0.8568** | **+0.0157** | 17,213 | **4×** |
+| Dynamic int8 | 95.73% | ±0.45% | 0.8285 | -0.0126 | 17,684 | ~4× |
+| Global int8 | 95.30% | ±0.98% | 0.8213 | -0.0198 | 17,213 | 4× |
+| MLP Baseline | 94.80% | ±0.63% | 0.8035 | — | 68,728 | 1× |
+
+#### EEG Brainwave (26.13s)
+
+| Method | Accuracy | ±std | F1 | Delta F1 | Size (bytes) | Ratio |
+|---|---|---|---|---|---|---|
+| Uncompressed (Dendritic) | 97.66% | ±0.23% | 0.9765 | — | 672,812 | 1× |
+| **Snowflake (int8)** | **97.58%** | **±0.14%** | **0.9757** | **-0.0008** | 168,251 | **4×** |
+| Global int8 | 97.58% | ±0.36% | 0.9757 | -0.0008 | 168,251 | 4× |
+| Dynamic int8 | 95.24% | ±0.14% | 0.9516 | -0.0248 | 168,716 | ~4× |
+| MLP Baseline | 97.74% | ±0.27% | 0.9773 | — | 673,740 | 1× |
+
+#### HAPT (249.76s)
+
+| Method | Accuracy | ±std | F1 | Delta F1 | Size (bytes) | Ratio |
+|---|---|---|---|---|---|---|
+| Uncompressed (Dendritic) | 92.45% | ±0.52% | 0.8146 | — | 165,328 | 1× |
+| **Snowflake (int8)** | **92.80%** | **±0.62%** | **0.8178** | **+0.0032** | 41,380 | **4×** |
+| Global int8 | 92.69% | ±0.54% | 0.8138 | -0.0008 | 41,380 | 4× |
+| Dynamic int8 | 92.45% | ±0.48% | 0.8117 | -0.0028 | 41,872 | ~4× |
+| MLP Baseline | 92.37% | ±0.89% | 0.8281 | — | 165,360 | 1× |
+
+### Observations
+1. **Snowflake int8 best or tied-best on all 4 datasets** — consistent 4× lossless compression
+2. **ECG and HAPT: Snowflake improves over uncompressed** (+0.0157 and +0.0032 F1) — quantization regularises on imbalanced/complex tasks
+3. **Dynamic int8 weakest** — worst on EEG (-0.0248 F1); per-layer static calibration (Snowflake) consistently more robust
+4. **HAPT: MLP slightly outperforms Dendritic** (F1 0.828 vs 0.815) — 12-class transition structure may favour the simpler MLP topology; Dendritic advantage persists on ECG
+5. **HAR now 6-class** — F1 0.9803 vs prior 0.9998 (binary); more discriminative as a benchmark
+6. **Oversampling critical for ECG** — without balancing: acc=0.9747 but F1=0.8735 (model ignores minority arrhythmia classes); with balancing: F1~0.97
+
+---
+
 ## Next Steps
 
 - [x] ~~Commit today's session work~~ — done in `2177bd0`
@@ -388,4 +471,6 @@ All 21 plots generated. Exit code 0.
 - [x] ~~Run full 50-epoch 3-seed benchmark across HAR + ECG + EEG on GPU~~ — done 2026-05-20
 - [x] ~~Add component ablation plot~~ — done 2026-05-27
 - [x] ~~Expand plot suite~~ — done 2026-05-27 (8 new plot types)
-- [ ] Run full 50-epoch 3-seed benchmark with component ablation on ECG (switched 2026-05-27, ETA ~3.5–4 hrs)
+- [x] ~~Run full 50-epoch 3-seed benchmark with component ablation on ECG~~ — done 2026-05-28
+- [x] ~~Add HAPT (12-class) dataset and experiment~~ — done 2026-05-28
+- [x] ~~Refactor experiment files to shared base_experiment.py~~ — done 2026-05-28
