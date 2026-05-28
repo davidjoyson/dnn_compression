@@ -47,6 +47,7 @@ def store_simple(results, timings, name, out, elapsed):
         "time_seconds":    elapsed,
         "num_seeds":       out.get("num_seeds", 1),
         "curve_data":      out.get("curve_data"),
+        "per_seed":        out.get("per_seed"),
         "loss_history":    out.get("loss_history"),
         "val_acc_history": out.get("val_acc_history"),
         "conf_matrix":     out.get("conf_matrix"),

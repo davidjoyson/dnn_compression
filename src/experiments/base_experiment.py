@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from sklearn.model_selection import train_test_split
 from src.training.train import train
-from src.training.evaluate import evaluate, f1_eval, confusion_matrix_eval
+from src.training.evaluate import evaluate, f1_eval, confusion_matrix_eval, predict_proba_multiclass
 from src.models.dendritic_network import DendriticNetwork
 from src.models.mlp_baseline import MLPBaseline
 from src.compression.compression_pipeline import (
@@ -36,6 +36,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     weight_dist = None
     val_acc_history = None
     inference_times = None
+    curve_data = None
 
     for seed in seeds:
         X_raw_tr, y_raw_tr, X_raw_test, y_raw_test = get_data(seed)
@@ -69,6 +70,9 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         f1_u_list.append(f1_eval(model_u, X_test, y_test, num_classes=num_classes))
         conf_matrix_u = confusion_matrix_eval(model_u, X_test, y_test, num_classes=num_classes)
 
+        if curve_data is None:
+            _y_score_u = predict_proba_multiclass(model_u, X_test)
+
         original_state = {k: v.cpu().clone() for k, v in model_u.state_dict().items()}
 
         if weight_dist is None:
@@ -85,6 +89,14 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         acc_c_list.append(evaluate(model_u, X_test, y_test, num_classes=num_classes))
         f1_c_list.append(f1_eval(model_u, X_test, y_test, num_classes=num_classes))
         conf_matrix_c = confusion_matrix_eval(model_u, X_test, y_test, num_classes=num_classes)
+
+        if curve_data is None:
+            curve_data = {
+                "y_true":               y_raw_test,
+                "y_score_uncompressed": _y_score_u,
+                "y_score_compressed":   predict_proba_multiclass(model_u, X_test),
+                "num_classes":          num_classes,
+            }
 
         # Global int8
         model_u.load_state_dict(original_state)
@@ -211,6 +223,17 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         "conf_matrix":      {"uncompressed": conf_matrix_u, "compressed": conf_matrix_c},
         "class_names":      class_names,
         "weight_dist":      weight_dist,
+        "curve_data":       curve_data,
+        "per_seed": {
+            "acc_uncompressed":       acc_u_list,
+            "acc_compressed":         acc_c_list,
+            "acc_compressed_global":  acc_global_list,
+            "acc_compressed_dynamic": acc_dynamic_list,
+            "f1_uncompressed":        f1_u_list,
+            "f1_compressed":          f1_c_list,
+            "f1_compressed_global":   f1_global_list,
+            "f1_compressed_dynamic":  f1_dynamic_list,
+        },
         "inference_time_uncompressed_ms": inference_times["uncompressed_ms"] if inference_times else None,
         "inference_time_compressed_ms":   inference_times["compressed_ms"]   if inference_times else None,
         "inference_time_dynamic_ms":      inference_times["dynamic_ms"]      if inference_times else None,

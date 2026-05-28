@@ -12,6 +12,7 @@ from src.plots.plot_weight_dist import plot_weight_distribution
 from src.plots.plot_inference_time import plot_inference_time
 from src.plots.plot_val_accuracy import plot_val_accuracy
 from src.plots.plot_component_ablation import plot_component_ablation
+from src.plots.plot_compression_delta import plot_compression_delta
 
 
 def generate_plots(results):
@@ -189,6 +190,12 @@ def generate_plots(results):
                 print(f"  {name} per-class F1 saved")
             except Exception as e:
                 print(f"  Warning: Could not plot per-class F1 for {name}: {e}")
+            try:
+                plot_compression_delta(r["conf_matrix"], r["class_names"],
+                                       title=name, filename=f"{slug}_compression_delta.png")
+                print(f"  {name} compression delta saved")
+            except Exception as e:
+                print(f"  Warning: Could not plot compression delta for {name}: {e}")
 
         if r.get("weight_dist") is not None:
             try:

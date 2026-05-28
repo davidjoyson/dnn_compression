@@ -189,7 +189,59 @@ def print_summary(results, timings):
             print(f"  MLP Compressed MSE:{mse_mlp_c:.4f} +/- {std_mse_mlp_c:.4f}")
         if r.get("size_mlp_uncompressed") is not None:
             print(f"  MLP Size         : {r['size_mlp_uncompressed']} -> {r['size_mlp_compressed']} bytes")
+
+        ps = r.get("per_seed")
+        if ps and len(ps.get("acc_uncompressed", [])) >= 2:
+            try:
+                from scipy import stats as _stats
+                a_u  = ps["acc_uncompressed"]
+                a_sf = ps["acc_compressed"]
+                a_gl = ps.get("acc_compressed_global", [])
+                a_dy = ps.get("acc_compressed_dynamic", [])
+                def _ttest(a, b):
+                    t, p = _stats.ttest_rel(a, b)
+                    sig = "*" if p < 0.05 else "n.s."
+                    return f"t={t:+.3f}, p={p:.4f} ({sig})"
+                print(f"  Significance (paired t-test, n={len(a_u)}):")
+                print(f"    Snowflake vs Uncompressed : {_ttest(a_sf, a_u)}")
+                if a_gl:
+                    print(f"    Global    vs Uncompressed : {_ttest(a_gl, a_u)}")
+                if a_dy:
+                    print(f"    Dynamic   vs Uncompressed : {_ttest(a_dy, a_u)}")
+            except ImportError:
+                pass
+
         print(time_str, end="")
+
+
+def save_per_seed_csv(results, run_dir):
+    rows = []
+    for name, r in results.items():
+        if not isinstance(r, dict) or r.get("per_seed") is None:
+            continue
+        ps = r["per_seed"]
+        n = len(ps["acc_uncompressed"])
+        for i in range(n):
+            rows.append({
+                "experiment":             name,
+                "seed_index":             i,
+                "acc_uncompressed":       round(ps["acc_uncompressed"][i], 6),
+                "acc_compressed":         round(ps["acc_compressed"][i], 6),
+                "acc_compressed_global":  round(ps["acc_compressed_global"][i], 6),
+                "acc_compressed_dynamic": round(ps["acc_compressed_dynamic"][i], 6),
+                "f1_uncompressed":        round(ps["f1_uncompressed"][i], 6),
+                "f1_compressed":          round(ps["f1_compressed"][i], 6),
+                "f1_compressed_global":   round(ps["f1_compressed_global"][i], 6),
+                "f1_compressed_dynamic":  round(ps["f1_compressed_dynamic"][i], 6),
+            })
+    if not rows:
+        return
+    csv_path = os.path.join(run_dir, "per_seed_metrics.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"  Per-seed metrics -> {csv_path}")
 
 
 def save_summary_txt(results, timings, run_dir):

@@ -78,3 +78,15 @@ def predict_proba(model, X, device=None):
         return model(X).cpu().numpy().ravel()
 
 
+def predict_proba_multiclass(model, X, device=None):
+    """Return softmax probabilities as a CPU numpy array (N, num_classes)."""
+    import torch.nn.functional as F
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+    X = X.to(device)
+    model.eval()
+    with torch.no_grad():
+        return F.softmax(model(X), dim=1).cpu().numpy()
+
+

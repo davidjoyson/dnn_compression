@@ -20,7 +20,7 @@ import src.plots.save_utils as _save_utils
 
 from src.reporting import (
     store_simple, make_run_dir,
-    save_metrics_csv, save_summary_txt,
+    save_metrics_csv, save_per_seed_csv, save_summary_txt,
     print_summary, generate_plots,
 )
 
@@ -191,6 +191,7 @@ def main():
     print_summary(results, timings)
     generate_plots(results)
     save_metrics_csv(results, run_dir)
+    save_per_seed_csv(results, run_dir)
     save_summary_txt(results, timings, run_dir)
 
     sys.stdout = sys.__stdout__
