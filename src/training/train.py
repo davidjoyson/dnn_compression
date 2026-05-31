@@ -1,16 +1,12 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
-from tqdm import tqdm
-tqdm_config = {"colour": "white"}
 
 
-def train(model, X, y, epochs=1, lr=1e-3, batch_size=64, use_tqdm=True,
+def train(model, X, y, epochs=1, lr=1e-3, batch_size=64,
           X_val=None, y_val=None, num_classes=1):
     """
     Training loop for all experiments.
-    - use_tqdm=True  → progress bar (default)
-    - use_tqdm=False → no progress bar (for scaling experiments)
     - X_val / y_val  → if provided, computes val loss per epoch and returns
                         (train_history, val_history) instead of train_history alone
     - num_classes>1  → uses CrossEntropyLoss; y must be class indices (long)
@@ -40,15 +36,10 @@ def train(model, X, y, epochs=1, lr=1e-3, batch_size=64, use_tqdm=True,
     history = []
     val_history = {"loss": [], "acc": []} if X_val is not None else None
 
-    for epoch in range(epochs):
-        if use_tqdm:
-            loop = tqdm(loader, desc=f"Epoch {epoch+1}/{epochs}", leave=False, **tqdm_config)
-        else:
-            loop = loader
-
+    for _ in range(epochs):
         epoch_loss = 0.0
         n_batches = 0
-        for xb, yb in loop:
+        for xb, yb in loader:
             xb, yb = xb.to(device), yb.to(device)
             opt.zero_grad()
             preds = model(xb)
@@ -58,9 +49,6 @@ def train(model, X, y, epochs=1, lr=1e-3, batch_size=64, use_tqdm=True,
 
             epoch_loss += loss.detach().item()
             n_batches += 1
-
-            if use_tqdm:
-                loop.set_postfix(loss=epoch_loss / n_batches)
 
         history.append(epoch_loss / n_batches if n_batches > 0 else 0.0)
 

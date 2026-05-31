@@ -48,7 +48,7 @@ def compress_model(model, fine_tune_data=None, fine_tune_epochs=3, fine_tune_lr=
         X, y = fine_tune_data
         num_classes = getattr(model, "num_classes", 1)
         decompress_model(compressed, model)
-        train(model, X, y, epochs=fine_tune_epochs, lr=fine_tune_lr, use_tqdm=False,
+        train(model, X, y, epochs=fine_tune_epochs, lr=fine_tune_lr,
               num_classes=num_classes)
         compressed = _quantize(model)
 
@@ -105,7 +105,7 @@ def compress_model_global(model, fine_tune_data=None, fine_tune_epochs=3, fine_t
         X, y = fine_tune_data
         num_classes = getattr(model, "num_classes", 1)
         decompress_model(compressed, model)
-        train(model, X, y, epochs=fine_tune_epochs, lr=fine_tune_lr, use_tqdm=False,
+        train(model, X, y, epochs=fine_tune_epochs, lr=fine_tune_lr,
               num_classes=num_classes)
         compressed = _quantize_global(model)
     return compressed

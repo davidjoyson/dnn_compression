@@ -332,7 +332,9 @@ Dynamic int8 fails on EEG (-2.42%) — the large fc1 layer (163k params, wide ac
 | `f98a4af` | 2026-05-17 | Update accuracy plot to show all compression methods |
 | `3e2acda` | 2026-05-20 | Confusion matrices, plot style system, yerr fix; 50-epoch 3-seed HAR+ECG+EEG results |
 | `25aa06a` | 2026-05-27 | Refactor MLP to match DNN code structure; add `print_arch` to both models |
-| *(this session)* | 2026-05-28 | Refactor experiments to shared base_experiment.py; add HAPT 12-class dataset; full 4-dataset 3-seed run |
+| `cfed247` | 2026-05-28 | Refactor experiments to shared base_experiment.py; add HAPT 12-class dataset; full 4-dataset 3-seed run |
+| `55328fb` | 2026-05-28 | Add 3 deeper analysis features: ROC/PR curves, compression delta, significance |
+| *(this session)* | 2026-05-31 | Remove tqdm from training loop; TF parity check on ECG (matching results, TF files deleted) |
 
 ---
 
@@ -456,6 +458,37 @@ Component ablation (1 seed, time: 1,127.69s):
 4. **HAPT: MLP slightly outperforms Dendritic** (F1 0.828 vs 0.815) — 12-class transition structure may favour the simpler MLP topology; Dendritic advantage persists on ECG
 5. **HAR now 6-class** — F1 0.9803 vs prior 0.9998 (binary); more discriminative as a benchmark
 6. **Oversampling critical for ECG** — without balancing: acc=0.9747 but F1=0.8735 (model ignores minority arrhythmia classes); with balancing: F1~0.97
+
+---
+
+## 2026-05-31 — TF Parity Check + tqdm Removal
+
+**Commits:** *(this session)*
+
+### Summary
+Implemented a TensorFlow port of `DendriticNetwork` to verify architecture parity, ran it on ECG for 50 epochs across 3 seeds, confirmed matching results, then deleted the TF files — project stays PyTorch-only. Removed tqdm from the training loop.
+
+### TF DendriticNetwork — ECG Parity Check
+
+Ported `DendriticNetwork` to TensorFlow (`DendriticNetworkTF`, same topology: fc1 → branches → soma → fc2 → out). Ran on ECG (50 epochs, 3 seeds: 42, 123, 456).
+
+| Seed | Accuracy | F1 (macro) |
+|------|----------|------------|
+| 42   | 0.9621   | 0.8484     |
+| 123  | 0.9666   | 0.8516     |
+| 456  | 0.9637   | 0.8471     |
+| **Mean** | **0.9641 ± 0.0019** | **0.8490 ± 0.0019** |
+
+Result matches PyTorch baseline (~0.96 acc, ~0.84 F1). TF files deleted after verification — no reason to maintain two implementations.
+
+**Note:** TF GPU not available on native Windows ≥ 2.11 (requires WSL2 or DirectML plugin). Ran on CPU only.
+
+### tqdm Removal
+
+Removed tqdm progress bar from `src/training/train.py`:
+- Deleted `from tqdm import tqdm`, `tqdm_config`, `use_tqdm` parameter, and loop wrapping
+- `for epoch in range(epochs)` → `for _ in range(epochs)`
+- Removed `use_tqdm=False` from both `compress_model` and `compress_model_global` calls in `compression_pipeline.py`
 
 ---
 
