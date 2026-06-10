@@ -334,7 +334,9 @@ Dynamic int8 fails on EEG (-2.42%) — the large fc1 layer (163k params, wide ac
 | `25aa06a` | 2026-05-27 | Refactor MLP to match DNN code structure; add `print_arch` to both models |
 | `cfed247` | 2026-05-28 | Refactor experiments to shared base_experiment.py; add HAPT 12-class dataset; full 4-dataset 3-seed run |
 | `55328fb` | 2026-05-28 | Add 3 deeper analysis features: ROC/PR curves, compression delta, significance |
-| *(this session)* | 2026-05-31 | Remove tqdm from training loop; TF parity check on ECG (matching results, TF files deleted) |
+| `5399d2c` | 2026-05-31 | Remove tqdm from training loop; TF parity check on ECG (matching results, TF files deleted) |
+| `55328fb` | 2026-06-09 | Add ROC/PR curves, compression delta, and paired t-test significance reporting |
+| `3c5b2da` | 2026-06-09 | Best-model saving per dataset, edge-AI profile plot, ablation/component out of defaults |
 
 ---
 
@@ -492,6 +494,51 @@ Removed tqdm progress bar from `src/training/train.py`:
 
 ---
 
+---
+
+## 2026-06-09 — Best Model Saving + Edge Profiling + Deeper Analysis
+
+**Commits:** `55328fb` Add ROC/PR curves, compression delta, significance · `5399d2c` Remove tqdm from training loop · `3c5b2da` Add best-model saving, edge profiling, and deeper analysis features
+
+### Summary
+Added deeper analysis features (ROC/PR curves, per-method compression delta, paired t-test significance). Added edge-AI profiling (model size, FLOPs, latency, throughput estimates). Added best-model saving per dataset. Commented ablation/component out of default `ALL_EXPERIMENTS` so they only run when explicitly invoked. Ran full 50-epoch 3-seed benchmark.
+
+### Infrastructure Changes
+
+**`55328fb` — ROC/PR curves, compression delta, significance**
+- Per-method ROC and PR curve plots added to all experiments
+- Compression delta (Snowflake − uncompressed, etc.) now reported in summary
+- Paired t-test (n=3 seeds) for Snowflake/Global/Dynamic vs Uncompressed; p-values and significance stars reported
+
+**`3c5b2da` — Best model saving, edge profiling**
+- `base_experiment.py`: tracks best accuracy across seeds for uncompressed, Snowflake, and MLP; saves state dicts after the seed loop
+  - `{run_dir}/models/{dataset}/dendritic_uncompressed.pt` — float32 state dict
+  - `{run_dir}/models/{dataset}/dendritic_snowflake.pt` — compressed quantized dict
+  - `{run_dir}/models/{dataset}/mlp.pt` — float32 state dict
+- `src/plots/plot_edge_profile.py` (new): edge-AI profile bar/table — model size, params, FLOPs/sample, activation memory, latency, throughput estimates
+- `main.py`: ablation/component commented out of `ALL_EXPERIMENTS`; pass `model_dir` to all dataset runners; `_model_dirs` dict maps dataset key to save path
+
+### Run — 50 epochs, 3 seeds (42, 0, 7)
+*Output: `outputs/run_20260609_150152_all_epo50`*
+
+| Dataset | Uncompressed | Snowflake int8 | Delta | F1 delta | Size |
+|---|---|---|---|---|---|
+| UCI HAR (6-class) | 97.94% ±0.32% | 97.93% ±0.34% | -0.02% | -0.0001 | 160.7→40.2 KB (4×) |
+| ECG Heartbeat (5-class) | 96.08% ±0.43% | **96.60% ±0.42%** | **+0.53%** | +0.0157 | 67.0→16.8 KB (4×) |
+| EEG Brainwave (3-class) | 97.66% ±0.23% | 97.58% ±0.14% | -0.08% | -0.0008 | 657.0→164.3 KB (4×) |
+| HAPT (12-class) | 92.45% ±0.52% | **92.80% ±0.62%** | **+0.35%** | +0.0032 | 161.4→40.4 KB (4×) |
+
+Significance (paired t-test, n=3): Dynamic int8 on EEG is the only statistically significant degradation — t=-31.0, p=0.001 (*).
+
+Edge-AI profile highlights (HAR as example):
+- Params: 41,134 | FLOPs/sample: 41,134 MACs | Activation mem: 1.36 KB
+- Latency: Dendritic=1.57μs | Snowflake=1.64μs | Dynamic=2.46μs | MLP=0.33μs
+- Throughput: Dendritic=635K | Snowflake=611K | Dynamic=406K | MLP=3.04M sps
+
+Timing: HAR=112s | ECG=2729s (~45 min) | EEG=23s | HAPT=205s | **Total≈50 min**
+
+---
+
 ## Next Steps
 
 - [x] ~~Commit today's session work~~ — done in `2177bd0`
@@ -507,3 +554,6 @@ Removed tqdm progress bar from `src/training/train.py`:
 - [x] ~~Run full 50-epoch 3-seed benchmark with component ablation on ECG~~ — done 2026-05-28
 - [x] ~~Add HAPT (12-class) dataset and experiment~~ — done 2026-05-28
 - [x] ~~Refactor experiment files to shared base_experiment.py~~ — done 2026-05-28
+- [x] ~~Add ROC/PR curves, compression delta, significance testing~~ — done 2026-06-09 (`55328fb`)
+- [x] ~~Add edge-AI profile (FLOPs, latency, throughput)~~ — done 2026-06-09 (`3c5b2da`)
+- [x] ~~Save best models per dataset after training~~ — done 2026-06-09 (`3c5b2da`)
