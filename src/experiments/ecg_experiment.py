@@ -4,7 +4,7 @@ from src.experiments.base_experiment import run_experiment
 _CLASS_NAMES = ["Normal", "Supraventricular", "Ventricular", "Fusion", "Unknown"]
 
 
-def run_ecg(epochs=50, seeds=(42,), fine_tune_epochs=3):
+def run_ecg(epochs=50, seeds=(42,), fine_tune_epochs=3, model_dir=None):
     data = load_ecg()
     return run_experiment(
         get_data=lambda seed: data,
@@ -14,4 +14,5 @@ def run_ecg(epochs=50, seeds=(42,), fine_tune_epochs=3):
         seeds=seeds,
         fine_tune_epochs=fine_tune_epochs,
         batch_size=256,
+        model_dir=model_dir,
     )

@@ -13,6 +13,7 @@ from src.plots.plot_inference_time import plot_inference_time
 from src.plots.plot_val_accuracy import plot_val_accuracy
 from src.plots.plot_component_ablation import plot_component_ablation
 from src.plots.plot_compression_delta import plot_compression_delta
+from src.plots.plot_edge_profile import plot_edge_profile
 
 
 def generate_plots(results):
@@ -176,6 +177,11 @@ def generate_plots(results):
             print("  Inference time plot saved")
         except Exception as e:
             print(f"  Warning: Could not plot inference time: {e}")
+        try:
+            plot_edge_profile(ds_results)
+            print("  Edge profile plot saved")
+        except Exception as e:
+            print(f"  Warning: Could not plot edge profile: {e}")
 
     # Per-dataset plots requiring new data
     for name, r in results.items():

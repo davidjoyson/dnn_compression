@@ -1,4 +1,5 @@
 import copy
+import os
 import time
 import numpy as np
 import torch
@@ -17,7 +18,7 @@ from src.compression.compression_pipeline import (
 )
 
 
-def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_epochs, batch_size=128):
+def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_epochs, batch_size=128, model_dir=None):
     """
     Shared experiment loop for all tabular datasets.
 
@@ -27,6 +28,9 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     """
     acc_u_list, acc_c_list, acc_mlp_list, acc_mlp_c_list = [], [], [], []
     acc_global_list, acc_dynamic_list = [], []
+    best_acc_u, best_state_u = -1, None
+    best_acc_c, best_compressed_c = -1, None
+    best_acc_mlp, best_state_mlp = -1, None
     f1_u_list, f1_c_list, f1_global_list, f1_dynamic_list, f1_mlp_list, f1_mlp_c_list = [], [], [], [], [], []
     conf_matrix_u, conf_matrix_c = None, None
     size_u, size_c = None, None
@@ -37,6 +41,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     val_acc_history = None
     inference_times = None
     curve_data = None
+    n_params = None
 
     for seed in seeds:
         X_raw_tr, y_raw_tr, X_raw_test, y_raw_test = get_data(seed)
@@ -62,6 +67,8 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             hidden_per_branch=8,
             num_classes=num_classes,
         )
+        if n_params is None:
+            n_params = sum(p.numel() for p in model_u.parameters())
         hist_u, val_hist_u = train(
             model_u, X_train, y_train, epochs=epochs,
             X_val=X_val, y_val=y_val, num_classes=num_classes, batch_size=batch_size,
@@ -74,6 +81,9 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             _y_score_u = predict_proba_multiclass(model_u, X_test)
 
         original_state = {k: v.cpu().clone() for k, v in model_u.state_dict().items()}
+        if model_dir and acc_u_list[-1] > best_acc_u:
+            best_acc_u = acc_u_list[-1]
+            best_state_u = original_state
 
         if weight_dist is None:
             weights_before = np.concatenate([p.data.cpu().numpy().ravel() for p in model_u.parameters()])
@@ -87,6 +97,9 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             weights_after = np.concatenate([p.data.cpu().numpy().ravel() for p in model_u.parameters()])
             weight_dist = {"before": weights_before, "after": weights_after}
         acc_c_list.append(evaluate(model_u, X_test, y_test, num_classes=num_classes))
+        if model_dir and acc_c_list[-1] > best_acc_c:
+            best_acc_c = acc_c_list[-1]
+            best_compressed_c = compressed
         f1_c_list.append(f1_eval(model_u, X_test, y_test, num_classes=num_classes))
         conf_matrix_c = confusion_matrix_eval(model_u, X_test, y_test, num_classes=num_classes)
 
@@ -121,6 +134,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         if inference_times is None:
             model_u.load_state_dict(original_state)
             X_cpu = X_test.cpu()
+            n_test = len(X_cpu)
             def _time_ms(m, n_runs=30):
                 m_cpu = m.cpu().eval()
                 with torch.no_grad():
@@ -129,10 +143,21 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
                     for _ in range(n_runs):
                         _ = m_cpu(X_cpu)
                 return (time.perf_counter() - t0) / n_runs * 1000
+            try:
+                import torchinfo as _torchinfo
+                _tinfo = _torchinfo.summary(model_u, input_size=(1, X_test.shape[1]), verbose=0)
+                flops_per_sample = _tinfo.total_mult_adds
+                activation_kb    = _tinfo.total_output_bytes / 1024
+            except Exception:
+                flops_per_sample = None
+                activation_kb    = None
             inference_times = {
-                "uncompressed_ms": _time_ms(model_u),
-                "compressed_ms":   _time_ms(copy.deepcopy(model_u)),
-                "dynamic_ms":      _time_ms(model_dynamic),
+                "uncompressed_ms":  _time_ms(model_u),
+                "compressed_ms":    _time_ms(copy.deepcopy(model_u)),
+                "dynamic_ms":       _time_ms(model_dynamic),
+                "n_test":           n_test,
+                "flops_per_sample": flops_per_sample,
+                "activation_kb":    activation_kb,
             }
 
         mlp = MLPBaseline(
@@ -145,6 +170,9 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             X_val=X_val, y_val=y_val, num_classes=num_classes, batch_size=batch_size,
         )
         acc_mlp_list.append(evaluate(mlp, X_test, y_test, num_classes=num_classes))
+        if model_dir and acc_mlp_list[-1] > best_acc_mlp:
+            best_acc_mlp = acc_mlp_list[-1]
+            best_state_mlp = {k: v.cpu().clone() for k, v in mlp.state_dict().items()}
         f1_mlp_list.append(f1_eval(mlp, X_test, y_test, num_classes=num_classes))
 
         compressed_mlp = compress_model(mlp, fine_tune_data=(X_train, y_train),
@@ -171,6 +199,47 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
                 "Dendritic": val_hist_u["acc"],
                 "MLP":       val_hist_mlp["acc"],
             }
+
+    if model_dir:
+        os.makedirs(model_dir, exist_ok=True)
+        if best_state_u is not None:
+            torch.save(best_state_u, os.path.join(model_dir, "dendritic_uncompressed.pt"))
+        if best_compressed_c is not None:
+            torch.save(best_compressed_c, os.path.join(model_dir, "dendritic_snowflake.pt"))
+        if best_state_mlp is not None:
+            torch.save(best_state_mlp, os.path.join(model_dir, "mlp.pt"))
+
+    _n_test = inference_times.get("n_test", 1) if inference_times else 1
+
+    def _lat_us(key):
+        ms = inference_times.get(key) if inference_times else None
+        return round(ms * 1000 / _n_test, 4) if ms and _n_test else None
+
+    def _tput(key):
+        ms = inference_times.get(key) if inference_times else None
+        return round(_n_test / (ms / 1000), 1) if ms and _n_test else None
+
+    edge_profile = {
+        "params":             n_params,
+        "flops_per_sample":   inference_times.get("flops_per_sample") if inference_times else None,
+        "model_size_kb":      round(size_u / 1024, 2) if size_u else None,
+        "compressed_size_kb": round(size_c / 1024, 2) if size_c else None,
+        "compression_ratio":  round(size_u / size_c, 3) if size_u and size_c else None,
+        "activation_mem_kb":  round((inference_times.get("activation_kb") or 0), 2)
+                              if inference_times and inference_times.get("activation_kb") else None,
+        "latency_us": {
+            "uncompressed": _lat_us("uncompressed_ms"),
+            "compressed":   _lat_us("compressed_ms"),
+            "dynamic":      _lat_us("dynamic_ms"),
+            "mlp":          _lat_us("mlp_ms"),
+        },
+        "throughput_sps": {
+            "uncompressed": _tput("uncompressed_ms"),
+            "compressed":   _tput("compressed_ms"),
+            "dynamic":      _tput("dynamic_ms"),
+            "mlp":          _tput("mlp_ms"),
+        },
+    }
 
     n     = len(seeds)
     _mean = lambda lst: float(sum(lst) / n)
@@ -238,4 +307,5 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         "inference_time_compressed_ms":   inference_times["compressed_ms"]   if inference_times else None,
         "inference_time_dynamic_ms":      inference_times["dynamic_ms"]      if inference_times else None,
         "inference_time_mlp_ms":          inference_times["mlp_ms"]          if inference_times else None,
+        "edge_profile":                   edge_profile,
     }

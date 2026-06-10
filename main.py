@@ -32,7 +32,7 @@ SEEDS  = (42, 0, 7)
 EPOCHS = 50
 
 ALL_EXPERIMENTS = [
-    "ablation", "component",
+    # "ablation", "component",  # run manually when needed: --exp ablation component
     "har", "ecg", "eeg", "hapt",
 ]
 
@@ -83,35 +83,39 @@ def _run_component(results, timings, epochs, seeds):
     timings["Component Ablation"] = time.time() - t0
 
 
-def _run_har(results, timings, epochs, seeds, fine_tune_epochs=3):
+def _run_har(results, timings, epochs, seeds, fine_tune_epochs=3, model_dir=None):
     print("\n=== UCI HAR (Wearable Sensors) ===\n")
     t0 = time.time()
     store_simple(results, timings, "UCI HAR",
-                 run_har(epochs=epochs, seeds=seeds, fine_tune_epochs=fine_tune_epochs),
+                 run_har(epochs=epochs, seeds=seeds, fine_tune_epochs=fine_tune_epochs,
+                         model_dir=model_dir),
                  time.time() - t0)
 
 
-def _run_ecg(results, timings, epochs, seeds, fine_tune_epochs=3):
+def _run_ecg(results, timings, epochs, seeds, fine_tune_epochs=3, model_dir=None):
     print("\n=== ECG Heartbeat (MIT-BIH, 5-class) ===\n")
     t0 = time.time()
     store_simple(results, timings, "ECG Heartbeat",
-                 run_ecg(epochs=epochs, seeds=seeds, fine_tune_epochs=fine_tune_epochs),
+                 run_ecg(epochs=epochs, seeds=seeds, fine_tune_epochs=fine_tune_epochs,
+                         model_dir=model_dir),
                  time.time() - t0)
 
 
-def _run_eeg(results, timings, epochs, seeds, fine_tune_epochs=3):
+def _run_eeg(results, timings, epochs, seeds, fine_tune_epochs=3, model_dir=None):
     print("\n=== EEG Brainwave (Emotions, 3-class) ===\n")
     t0 = time.time()
     store_simple(results, timings, "EEG Brainwave",
-                 run_eeg(epochs=epochs, seeds=seeds, fine_tune_epochs=fine_tune_epochs),
+                 run_eeg(epochs=epochs, seeds=seeds, fine_tune_epochs=fine_tune_epochs,
+                         model_dir=model_dir),
                  time.time() - t0)
 
 
-def _run_hapt(results, timings, epochs, seeds, fine_tune_epochs=3):
+def _run_hapt(results, timings, epochs, seeds, fine_tune_epochs=3, model_dir=None):
     print("\n=== HAPT (UCI Smartphone, 12-class) ===\n")
     t0 = time.time()
     store_simple(results, timings, "HAPT",
-                 run_hapt(epochs=epochs, seeds=seeds, fine_tune_epochs=fine_tune_epochs),
+                 run_hapt(epochs=epochs, seeds=seeds, fine_tune_epochs=fine_tune_epochs,
+                          model_dir=model_dir),
                  time.time() - t0)
 
 
@@ -165,7 +169,10 @@ def main():
     label = f"{tag}_epo{args.epochs}"
     run_dir = make_run_dir(label=label)
     _save_utils.set_fig_dir(os.path.join(run_dir, "figures"))
+    _models_root = os.path.join(run_dir, "models")
 
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     log_path = os.path.join(run_dir, "run.log")
     _log_fh = open(log_path, "w", encoding="utf-8", buffering=1)
     sys.stdout = _Tee(sys.__stdout__, _log_fh)
@@ -176,12 +183,19 @@ def main():
     print(f"    Log file  : {log_path}\n")
 
     _fine_tune_runners = {"har", "ecg", "eeg", "hapt"}
+    _model_dirs = {
+        "har":  os.path.join(_models_root, "har"),
+        "ecg":  os.path.join(_models_root, "ecg"),
+        "eeg":  os.path.join(_models_root, "eeg"),
+        "hapt": os.path.join(_models_root, "hapt"),
+    }
 
     results, timings = {}, {}
     pbar = tqdm(total=len(args.exp), desc="Experiments", colour="cyan")
     for key in args.exp:
         if key in _fine_tune_runners:
-            REGISTRY[key](results, timings, args.epochs, tuple(args.seeds), args.fine_tune_epochs)
+            REGISTRY[key](results, timings, args.epochs, tuple(args.seeds), args.fine_tune_epochs,
+                          model_dir=_model_dirs.get(key))
         else:
             REGISTRY[key](results, timings, args.epochs, tuple(args.seeds))
         pbar.set_postfix({"done": key})

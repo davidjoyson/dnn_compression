@@ -211,6 +211,44 @@ def print_summary(results, timings):
             except ImportError:
                 pass
 
+        ep = r.get("edge_profile")
+        if ep:
+            su = ep.get("model_size_kb")
+            sc = ep.get("compressed_size_kb")
+            cr = ep.get("compression_ratio")
+            cr_str = f"  ({cr:.1f}x ratio)" if cr else ""
+            print(f"  Edge Profile (edge-AI):")
+            if su is not None and sc is not None:
+                print(f"    Model size     : {su:.1f} KB  ->  {sc:.1f} KB{cr_str}")
+            if ep.get("params"):
+                print(f"    Params         : {ep['params']:,}")
+            if ep.get("flops_per_sample"):
+                print(f"    FLOPs/sample   : {ep['flops_per_sample']:,} MACs")
+            if ep.get("activation_mem_kb"):
+                print(f"    Activation mem : {ep['activation_mem_kb']:.2f} KB  (per-sample overhead)")
+            lat = ep.get("latency_us", {})
+            if lat.get("uncompressed"):
+                def _fmt_us(v): return f"{v:.2f}us" if v else "-"
+                lat_parts = [
+                    f"Dendritic={_fmt_us(lat.get('uncompressed'))}",
+                    f"Snowflake={_fmt_us(lat.get('compressed'))}",
+                    f"Dynamic={_fmt_us(lat.get('dynamic'))}",
+                    f"MLP={_fmt_us(lat.get('mlp'))}",
+                ]
+                print(f"    Latency/sample : " + "  |  ".join(lat_parts))
+            tp = ep.get("throughput_sps", {})
+            if tp.get("uncompressed"):
+                def _fmt_tp(v):
+                    if not v: return "—"
+                    return f"{v/1e6:.2f}M" if v >= 1e6 else f"{v/1e3:.0f}K"
+                tp_parts = [
+                    f"Dendritic={_fmt_tp(tp.get('uncompressed'))}",
+                    f"Snowflake={_fmt_tp(tp.get('compressed'))}",
+                    f"Dynamic={_fmt_tp(tp.get('dynamic'))}",
+                    f"MLP={_fmt_tp(tp.get('mlp'))}",
+                ]
+                print(f"    Throughput     : " + "  |  ".join(tp_parts) + " sps")
+
         print(time_str, end="")
 
 
