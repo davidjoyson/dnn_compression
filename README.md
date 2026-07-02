@@ -1,31 +1,63 @@
 # DNN Compression — Dendritic Network with Int8 Quantization
 
-A research project exploring lossless compression of biologically-inspired dendritic neural networks on tabular classification tasks. The core finding: **per-layer int8 quantization achieves ~4× compression with zero accuracy loss**, preserving the network's unique "snowflake" property where each branch learns distinct feature representations.
+A research project exploring lossless compression of biologically-inspired dendritic neural networks on real-world tabular/time-series classification tasks.
+
+**Core finding:** Per-layer int8 quantization (Snowflake) achieves **~4× compression with zero accuracy loss** across 4 datasets, while global and dynamic int8 quantization degrade accuracy — validating that per-layer calibration is essential for small models.
+
+---
+
+## Problem Statement
+
+Neural networks deployed on edge devices (wearables, microcontrollers) are constrained by memory. Standard compression methods (pruning, global quantization) degrade accuracy, especially on small models (<200k params). This project asks:
+
+> Can a biologically-inspired dendritic architecture be compressed 4× with no accuracy loss, outperforming standard quantization baselines?
+
+The dendritic network's "snowflake" property — parallel branches each learning distinct feature subspaces — is hypothesised to be especially compatible with per-layer quantization, since each branch's weight distribution is narrow and independently calibrated.
 
 ---
 
 ## Architecture
 
-### Dendritic Network
+### DendriticNetwork
 
 ```
 Input
-  └── FC1 (input_dim → hidden_neurons1)
+  └── FC1 (input_dim → hidden_neurons1)           [shared trunk]
         ├── Branch 0 (hidden_neurons1 → hidden_per_branch)
-        ├── Branch 1 (hidden_neurons1 → hidden_per_branch)
+        ├── Branch 1 (hidden_neurons1 → hidden_per_branch)   [parallel branches]
         ├── ...
         └── Branch N (hidden_neurons1 → hidden_per_branch)
-  └── Concat → FC2 (branches × hidden_per_branch → hidden_neurons2)
-  └── Output (hidden_neurons2 → 1, sigmoid)
+  └── Soma (branches × hidden_per_branch → branches)        [dendritic integration]
+  └── FC2 (branches → hidden_neurons2)
+  └── Output (hidden_neurons2 → num_classes)
 ```
 
-Each branch operates in parallel on the same layer-1 activations, learning different feature subspaces (the "snowflake" property). This diversity is what allows quantization to be lossless — topology sharing (forcing all branches to share weights) destroys this and causes accuracy loss.
+Each branch operates in parallel on the same FC1 activations, learning different feature subspaces. The soma layer integrates each branch's output to a single signal, mimicking biological dendritic integration.
 
 ### Compression Pipeline
 
-1. **Per-layer int8 quantization** — one shared scale per layer group (weight + bias). Weights stored as `int8` (1 byte each) plus one `float32` scale per layer.
-2. **Optional fine-tuning** — 3 epochs of post-quantization fine-tuning on training data before re-quantizing.
-3. Achieves ~4× size reduction; compression ratio depends on model size.
+Three methods evaluated head-to-head:
+
+| Method | Description | Size ratio |
+|---|---|---|
+| **Snowflake (int8)** | Per-layer int8 — one scale per layer group (weight + bias) | **4×** |
+| Global int8 | Single global scale across all parameters | 4× |
+| Dynamic int8 | PyTorch `quantize_dynamic` on Linear layers | ~4× |
+
+All methods optionally followed by 3 epochs of post-quantization fine-tuning. Compared against a param-matched MLP baseline.
+
+---
+
+## Results — 50 epochs, 3 seeds (42, 0, 7)
+
+| Dataset | Classes | Uncompressed | Snowflake (4×) | Delta | Significant? |
+|---|---|---|---|---|---|
+| UCI HAR | 6 | 97.94% ±0.32% | 97.93% ±0.34% | -0.02% | n.s. |
+| ECG Heartbeat | 5 | 96.08% ±0.43% | **96.60% ±0.42%** | **+0.53%** | n.s. |
+| EEG Brainwave | 3 | 97.66% ±0.23% | 97.58% ±0.14% | -0.08% | n.s. |
+| HAPT | 12 | 92.45% ±0.52% | **92.80% ±0.62%** | **+0.35%** | n.s. |
+
+Snowflake matches or beats uncompressed on all 4 datasets. No statistically significant degradation (paired t-test, n=3). Dynamic int8 on EEG is the only significant failure across all methods: -2.42%, p=0.001.
 
 ---
 
@@ -33,49 +65,65 @@ Each branch operates in parallel on the same layer-1 activations, learning diffe
 
 ```
 dnn_compression/
-├── main.py                          # Entry point — argparse CLI
-├── run.sh                           # Shell wrapper: python main.py "$@"
+├── main.py                              # Entry point — argparse CLI
+├── docs/
+│   └── experiment_log.md               # Full run history and findings
 │
 ├── src/
 │   ├── models/
-│   │   ├── dendritic_network.py     # DendriticNetwork (main model)
-│   │   └── mlp_baseline.py          # MLP baseline for comparison
+│   │   ├── dendritic_network.py         # DendriticNetwork (main model)
+│   │   └── mlp_baseline.py              # Param-matched MLP baseline
 │   │
 │   ├── compression/
-│   │   ├── compression_pipeline.py  # compress_model, decompress_model
-│   │   └── topology_sharing.py      # Branch weight sharing (not used in pipeline)
+│   │   ├── compression_pipeline.py      # compress_model / decompress_model
+│   │   └── topology_sharing.py          # Branch weight sharing (ablation only)
 │   │
 │   ├── training/
-│   │   ├── train.py                 # Training loop
-│   │   └── evaluate.py              # Accuracy evaluation
+│   │   ├── train.py                     # Training loop
+│   │   └── evaluate.py                  # Accuracy, F1, confusion matrix
 │   │
-│   ├── data/
-│   │   ├── load_wine.py             # Wine dataset (sklearn)
-│   │   ├── load_adult.py            # UCI Adult Income (OpenML)
-│   │   ├── load_folktables.py       # Folktables ACS Income
-│   │   └── load_creditcard.py       # CC Fraud (Kaggle CSV — see below)
+│   ├── loaders/
+│   │   ├── load_har.py                  # UCI HAR (wearable sensors, 6-class)
+│   │   ├── load_ecg.py                  # MIT-BIH ECG heartbeat (5-class)
+│   │   ├── load_eeg.py                  # EEG brainwave emotions (3-class)
+│   │   └── load_hapt.py                 # UCI HAPT smartphone IMU (12-class)
 │   │
 │   ├── experiments/
-│   │   ├── wine_experiment.py
-│   │   ├── uci_adult_experiment.py
-│   │   ├── folktables_experiment.py
-│   │   ├── folktables_multistate_experiment.py
-│   │   ├── creditcard_experiment.py
-│   │   ├── ablation_study.py
-│   │   └── scaling_experiment.py
+│   │   ├── base_experiment.py           # Shared training + eval loop for all datasets
+│   │   ├── har_experiment.py
+│   │   ├── ecg_experiment.py
+│   │   ├── eeg_experiment.py
+│   │   ├── hapt_experiment.py
+│   │   └── ablation_study.py            # Architecture + component ablations
 │   │
-│   └── plots/
+│   ├── reporting/
+│   │   ├── summary.py                   # Print summary, significance, edge profile
+│   │   ├── plots.py                     # Dispatch all plots per experiment
+│   │   └── utils.py                     # CSV export, run dir creation
+│   │
+│   └── plots/                           # Individual plot modules
 │       ├── plot_accuracy.py
-│       ├── plot_compression.py
-│       ├── plot_ablation.py
-│       ├── plot_scaling.py
-│       ├── plot_folktables_multistate.py
+│       ├── plot_confusion_matrix.py
 │       ├── plot_roc_pr.py
-│       ├── plot_training_curves.py
-│       ├── folktables_plots.py
-│       └── save_utils.py
+│       ├── plot_compression_delta.py
+│       ├── plot_edge_profile.py
+│       ├── plot_per_class_f1.py
+│       ├── plot_cross_dataset.py
+│       ├── plot_pareto.py
+│       └── ...
 │
-└── figures/                         # Auto-generated plots saved here
+└── outputs/                             # Auto-generated per run
+    └── run_YYYYMMDD_HHMMSS_<tag>/
+        ├── run.log
+        ├── metrics.csv
+        ├── per_seed_metrics.csv
+        ├── summary.txt
+        ├── figures/
+        └── models/
+            ├── har/   (dendritic_uncompressed.pt, dendritic_snowflake.pt, mlp.pt)
+            ├── ecg/
+            ├── eeg/
+            └── hapt/
 ```
 
 ---
@@ -83,90 +131,63 @@ dnn_compression/
 ## Setup
 
 ```bash
-pip install torch scikit-learn pandas numpy matplotlib folktables tqdm
+pip install torch scikit-learn pandas numpy matplotlib torchinfo tqdm
 ```
 
-### Credit Card Fraud dataset
+### Datasets
 
-Download `creditcard.csv` from [kaggle.com/mlg-ulb/creditcardfraud](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) and place it at:
+| Dataset | Source | Auto-download? |
+|---|---|---|
+| UCI HAR | [UCI ML Repository](https://archive.ics.uci.edu/dataset/240/human+activity+recognition+using+smartphones) | Manual — place in `data/har/` |
+| ECG Heartbeat | Kaggle `shayanfazeli/heartbeat` | Via Kaggle CLI on first load |
+| EEG Brainwave | Kaggle `birdy654/eeg-brainwave-dataset-feeling-emotions` | Via Kaggle CLI on first load |
+| UCI HAPT | [UCI ML Repository](https://archive.ics.uci.edu/dataset/341/smartphone+based+recognition+of+human+activities+and+postural+transitions) | Manual — place in `data/hapt/` |
 
-```
-src/data/creditcard.csv
-```
-
-All other datasets are downloaded automatically (sklearn, OpenML, Folktables).
+For Kaggle datasets, set up `~/.kaggle/kaggle.json` with your credentials. `.npy` cache files are auto-generated on first load alongside the raw data.
 
 ---
 
 ## Usage
 
 ```bash
-# Run all experiments
+# Run all 4 datasets (default)
 python main.py
 
-# Run a single experiment
-python main.py --exp wine
-python main.py --exp fraud
+# Run specific experiments
+python main.py --exp har ecg
 
-# Run a subset
-python main.py --exp wine adult folktables
+# Override epochs and seeds
+python main.py --epochs 50 --seeds 42 0 7
 
-# Override epochs (default: 50)
-python main.py --exp wine --epochs 10
+# Run ablation studies (not in default run)
+python main.py --exp ablation component
+
+# Print model architecture and parameter counts
+python main.py --arch
 ```
 
-Available experiment keys:
+### CLI flags
 
-| Key | Description |
-|---|---|
-| `wine` | Wine dataset (sklearn) |
-| `adult` | UCI Adult Income |
-| `folktables` | Folktables CA 2018 ACS Income |
-| `multistate` | Folktables: train CA, test CA/TX/NY/FL/WA |
-| `fraud` | Credit Card Fraud Detection (Kaggle) |
-| `ablation` | Architecture ablation across 3 configs |
-| `component` | Compression component ablation (quant vs topo vs both) |
-| `scaling` | Grid search over hidden sizes and branch counts |
-
----
-
-## Experiments
-
-### Standard (wine, adult, folktables, fraud)
-
-Each runs over multiple seeds, reporting:
-- Uncompressed accuracy ± std
-- Compressed accuracy ± std
-- MLP baseline accuracy ± std
-- Model size before and after compression
-
-### Component Ablation
-
-Tests four compression conditions on the same architecture:
-
-| Condition | What it does |
-|---|---|
-| `none` | No compression |
-| `topo_only` | Topology sharing only (copies branch[0] weights to all branches) |
-| `quant_only` | Int8 quantization only |
-| `both` | Topology sharing + quantization |
-
-Key result: `quant_only` matches `none` in accuracy; `topo_only` causes a drop.
-
-### Scaling Experiment
-
-Grid search over `hidden_neurons1`, `hidden_neurons2`, and `branches`. Produces heatmaps per branch count showing:
-- Uncompressed accuracy
-- Compressed accuracy
-- Compression ratio
-- Time per config
-
-### Folktables Multi-State
-
-Trains on California (CA) 2018 ACS data, evaluates on CA, TX, NY, FL, WA. Tests whether quantization hurts cross-state generalisation.
+| Flag | Default | Description |
+|---|---|---|
+| `--exp` | `har ecg eeg hapt` | Experiments to run |
+| `--epochs` | `50` | Training epochs per experiment |
+| `--seeds` | `42 0 7` | Random seeds (results averaged) |
+| `--fine-tune-epochs` | `3` | Post-quantization fine-tuning epochs |
+| `--arch` | — | Print model architectures and exit |
 
 ---
 
 ## Outputs
 
-All plots are saved to `figures/`. Summary statistics are printed to stdout after all experiments complete.
+Each run creates a timestamped directory under `outputs/`:
+
+- `run.log` — full stdout/stderr mirror
+- `metrics.csv` — per-experiment summary stats
+- `per_seed_metrics.csv` — per-seed breakdown
+- `summary.txt` — human-readable summary with significance and edge profile
+- `figures/` — all plots (accuracy, confusion matrix, ROC/PR, compression delta, edge profile, etc.)
+- `models/{dataset}/` — best model weights per dataset:
+  - `dendritic_uncompressed.pt` — float32 state dict (best seed)
+  - `dendritic_snowflake.pt` — compressed quantized dict (best seed)
+  - `mlp.pt` — float32 MLP state dict (best seed)

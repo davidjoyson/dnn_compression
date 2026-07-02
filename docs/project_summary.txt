@@ -1,0 +1,90 @@
+DNN Compression — Project Summary
+===================================
+
+WHAT IT IS
+----------
+A research project testing whether biologically-inspired dendritic neural networks can be
+compressed 4x with no accuracy loss on edge-AI classification tasks (wearables, sensors,
+biomedical signals).
+
+CORE HYPOTHESIS
+---------------
+The dendritic network's "snowflake" property — parallel branches each learning distinct
+feature subspaces — makes it especially compatible with per-layer int8 quantization, since
+each branch's weight distribution is narrow and independently calibrated.
+
+ARCHITECTURE
+------------
+DendriticNetwork:
+  Input -> FC1 -> N parallel branches (each FC+ReLU) -> Concat -> Soma -> FC2 -> Output
+
+  Soma: collapses each branch's activations to one signal per branch (biologically motivated
+  dendritic integration). Compared against a param-matched MLPBaseline (single hidden layer,
+  same parameter count).
+
+COMPRESSION METHODS TESTED
+---------------------------
+  Snowflake int8   Per-layer int8, one scale per layer group (weight+bias)   4x
+  Global int8      Single scale across all parameters                        4x
+  Dynamic int8     PyTorch quantize_dynamic on Linear layers                ~4x
+  Snowflake int4   Per-layer 4-bit, packed 2-per-byte                       8x (size-dependent)
+
+KEY RESULTS (50 epochs, 3 seeds: 42, 0, 7)
+-------------------------------------------
+  Dataset                  Task                      Uncompressed      Snowflake int8     Delta
+  UCI HAR                  6-class activity           97.94% +/-0.32%  97.93% +/-0.34%   -0.02% (n.s.)
+  ECG Heartbeat (MIT-BIH)  5-class arrhythmia         96.08% +/-0.43%  96.60% +/-0.42%   +0.53% (n.s.)
+  EEG Brainwave            3-class emotion            97.66% +/-0.23%  97.58% +/-0.14%   -0.08% (n.s.)
+  HAPT                     12-class transitions       92.45% +/-0.52%  92.80% +/-0.62%   +0.35% (n.s.)
+
+  Snowflake matches or beats uncompressed on all 4 datasets.
+  No statistically significant degradation (paired t-test, n=3).
+
+KEY FINDINGS
+------------
+1. Snowflake int8 = 4x lossless compression
+   Per-layer calibration is essential; global int8 degrades accuracy.
+
+2. Dynamic int8 is unreliable
+   Fails on EEG (-2.42%, p=0.001) because PyTorch's runtime activation estimation
+   struggles with the large fc1 layer (163k params).
+
+3. Topology sharing is destructive
+   Forcing branches to share weights collapses accuracy; the snowflake diversity is
+   what makes quantization work.
+
+4. Int4 viability scales with model size
+   Not viable at ~17k params (ECG: -23.67%); viable at ~167k params (EEG: 0.00% delta
+   at 8x compression).
+
+5. Quantization regularises
+   Snowflake improves over uncompressed on ECG and HAPT (small model regime).
+
+6. Dendritic > MLP on complex tasks
+   +1.28% on ECG (5-class arrhythmia); equal on EEG (pre-engineered features).
+
+DATASETS
+--------
+  UCI HAR           561 features, 6-class wearable activity (walking, sitting, etc.)
+  ECG Heartbeat     187 features, 5-class arrhythmia (87k train samples, MIT-BIH)
+  EEG Brainwave     2,548 features, 3-class emotion (1,706 train samples)
+  HAPT              561 features, 12-class activities + postural transitions (oversampled)
+
+WHAT WAS EXPLORED AND RULED OUT
+--------------------------------
+  Pruning 75%        Catastrophic at ~17k params (37% accuracy) — dropped
+  Int4 at small scale  Not viable below ~100k params
+  Topology sharing   Always destructive — validated by ablation
+  TensorFlow port    Built, verified parity with PyTorch, then deleted (PyTorch-only)
+
+OPEN DIRECTIONS / POTENTIAL NEXT STEPS
+---------------------------------------
+  - Int4 experiments at intermediate model sizes (~50k-100k params) to find exact
+    viability threshold
+  - Larger dendritic architectures (more branches, more hidden neurons)
+  - Literature review on:
+      * Dendritic computation models
+      * Quantization-aware training (QAT)
+      * Edge-AI compression techniques
+      * Biological plausibility of branched/dendritic networks
+      * Neural network compression surveys
