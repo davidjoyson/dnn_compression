@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from .save_utils import fig_path
+from .save_utils import save_fig
 from .style import apply_style, PALETTE
 
 
@@ -30,6 +30,4 @@ def plot_ablation(results, filename="ablation.png"):
         ax.text(i, v + tick_h, f"{v:.4f}", ha="center", va="bottom",
                 fontsize=8.5, fontweight="bold")
 
-    plt.tight_layout()
-    plt.savefig(fig_path(filename), dpi=150, bbox_inches="tight")
-    plt.close()
+    save_fig(filename)

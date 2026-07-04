@@ -1,6 +1,6 @@
 import math
 import matplotlib.pyplot as plt
-from .save_utils import fig_path
+from .save_utils import save_fig
 from .style import apply_style, METHOD_COLORS, PALETTE
 
 
@@ -66,6 +66,4 @@ def plot_accuracy(methods, title="Accuracy Comparison", filename="accuracy.png",
                 ax.text(i, top + tick_h * 2, f"{delta:+.4f}",
                         ha="center", va="bottom", fontsize=7.5, color=d_color)
 
-    plt.tight_layout()
-    plt.savefig(fig_path(filename), dpi=150, bbox_inches="tight")
-    plt.close()
+    save_fig(filename)

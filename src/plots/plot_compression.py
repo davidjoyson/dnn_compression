@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from .save_utils import fig_path
+from .save_utils import save_fig
 from .style import apply_style, METHOD_COLORS, PALETTE
 
 
@@ -42,6 +42,4 @@ def plot_compression(sizes, title="Model Size Comparison", filename="compression
                     ha="center", va="bottom", fontsize=8, color="#2CA02C", fontweight="bold")
 
     ax.set_ylim(0, max(scaled) * 1.22)
-    plt.tight_layout()
-    plt.savefig(fig_path(filename), dpi=150, bbox_inches="tight")
-    plt.close()
+    save_fig(filename)

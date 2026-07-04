@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from .save_utils import fig_path
+from .save_utils import save_fig
 from .style import apply_style
 
 
@@ -40,10 +40,6 @@ def plot_training_curves(histories, title="", filename=None):
     plt.ylabel("Loss")
     plt.title(f"Training Curves{' — ' + title if title else ''}", pad=12)
     plt.legend(loc="upper right")
-    plt.tight_layout()
-
     if filename is None:
-        slug = title.lower().replace(" ", "_").replace("/", "_")
-        filename = f"{slug}_training_curves.png"
-    plt.savefig(fig_path(filename), dpi=150, bbox_inches="tight")
-    plt.close()
+        filename = f"{title.lower().replace(' ', '_').replace('/', '_')}_training_curves.png"
+    save_fig(filename)

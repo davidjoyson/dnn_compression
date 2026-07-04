@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from .save_utils import fig_path
+from .save_utils import save_fig
 from .style import apply_style
 
 
@@ -29,9 +29,6 @@ def plot_val_accuracy(val_acc_history, title="", filename=None):
     ax.set_ylim(max(0.0, ax.get_ylim()[0] - 0.02), 1.02)
     ax.legend(loc="lower right")
 
-    plt.tight_layout()
     if filename is None:
-        slug = title.lower().replace(" ", "_")
-        filename = f"{slug}_val_accuracy.png"
-    plt.savefig(fig_path(filename), dpi=150, bbox_inches="tight")
-    plt.close()
+        filename = f"{title.lower().replace(' ', '_')}_val_accuracy.png"
+    save_fig(filename)

@@ -1,14 +1,13 @@
 import torch
 
+_DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 def evaluate(model, X, y, num_classes=1, device=None):
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+    device = device or _DEVICE
     model = model.to(device)
     X = X.to(device)
     y = y.to(device)
-
     model.eval()
     with torch.no_grad():
         if num_classes > 1:
@@ -22,8 +21,7 @@ def evaluate(model, X, y, num_classes=1, device=None):
 
 def mse_score(model, X, y, device=None):
     """MSE between sigmoid probabilities and true labels."""
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = device or _DEVICE
     model = model.to(device)
     X = X.to(device)
     y = y.to(device)
@@ -34,8 +32,7 @@ def mse_score(model, X, y, device=None):
 
 def f1_eval(model, X, y, num_classes=1, device=None):
     from sklearn.metrics import f1_score
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = device or _DEVICE
     model = model.to(device)
     X = X.to(device)
     y = y.to(device)
@@ -51,8 +48,7 @@ def f1_eval(model, X, y, num_classes=1, device=None):
 
 def confusion_matrix_eval(model, X, y, num_classes=1, device=None):
     from sklearn.metrics import confusion_matrix
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = device or _DEVICE
     model = model.to(device)
     X = X.to(device)
     y = y.to(device)
@@ -67,26 +63,12 @@ def confusion_matrix_eval(model, X, y, num_classes=1, device=None):
     return confusion_matrix(labels, preds)
 
 
-def predict_proba(model, X, device=None):
-    """Return raw sigmoid probabilities as a CPU numpy array."""
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
-    X = X.to(device)
-    model.eval()
-    with torch.no_grad():
-        return model(X).cpu().numpy().ravel()
-
-
 def predict_proba_multiclass(model, X, device=None):
     """Return softmax probabilities as a CPU numpy array (N, num_classes)."""
     import torch.nn.functional as F
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = device or _DEVICE
     model = model.to(device)
     X = X.to(device)
     model.eval()
     with torch.no_grad():
         return F.softmax(model(X), dim=1).cpu().numpy()
-
-

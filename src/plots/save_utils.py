@@ -1,4 +1,5 @@
 import os
+import matplotlib.pyplot as plt
 
 FIG_DIR = "figures"
 
@@ -12,3 +13,8 @@ def ensure_fig_dir():
 def fig_path(name):
     ensure_fig_dir()
     return os.path.join(FIG_DIR, name)
+
+def save_fig(filename):
+    plt.tight_layout()
+    plt.savefig(fig_path(filename), dpi=150, bbox_inches="tight")
+    plt.close()

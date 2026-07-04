@@ -1,7 +1,7 @@
 import math
 import numpy as np
 import matplotlib.pyplot as plt
-from .save_utils import fig_path
+from .save_utils import save_fig
 from .style import apply_style, METHOD_COLORS, PALETTE
 
 
@@ -54,6 +54,4 @@ def plot_cross_dataset_summary(all_results, filename="cross_dataset_summary.png"
     ax.set_ylim(ymin, 1.02)
     ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.2f}"))
 
-    plt.tight_layout()
-    plt.savefig(fig_path(filename), dpi=150, bbox_inches="tight")
-    plt.close()
+    save_fig(filename)

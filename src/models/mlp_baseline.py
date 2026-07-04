@@ -33,12 +33,6 @@ class MLPBaseline(nn.Module):
             return torch.sigmoid(x)
         return x
 
-    # ---------------------------------------------------------
-    # Size in bytes (for uncompressed model)
-    # ---------------------------------------------------------
     def size_bytes(self):
-        total = 0
-        for p in self.parameters():
-            total += p.nelement() * p.element_size()
-        return total
+        return sum(p.nelement() * p.element_size() for p in self.parameters())
 

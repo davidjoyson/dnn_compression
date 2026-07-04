@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from .save_utils import fig_path
+from .save_utils import save_fig
 from .style import apply_style
 
 
@@ -37,9 +37,6 @@ def plot_compression_delta(conf_matrix, class_names, title="", filename=None):
             ha="center", va=va, fontsize=7,
         )
 
-    plt.tight_layout()
     if filename is None:
-        slug = title.lower().replace(" ", "_").replace("/", "_")
-        filename = f"{slug}_compression_delta.png"
-    plt.savefig(fig_path(filename), dpi=150, bbox_inches="tight")
-    plt.close()
+        filename = f"{title.lower().replace(' ', '_').replace('/', '_')}_compression_delta.png"
+    save_fig(filename)

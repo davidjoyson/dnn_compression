@@ -66,8 +66,5 @@ class DendriticNetwork(nn.Module):
     # Size in bytes (for uncompressed model)
     # ---------------------------------------------------------
     def size_bytes(self):
-        total = 0
-        for p in self.parameters():
-            total += p.nelement() * p.element_size()
-        return total
+        return sum(p.nelement() * p.element_size() for p in self.parameters())
 

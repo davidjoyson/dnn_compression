@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from .save_utils import fig_path
+from .save_utils import save_fig
 from .style import apply_style, METHOD_COLORS, PALETTE
 
 
@@ -43,6 +43,4 @@ def plot_inference_time(all_results, filename="inference_time.png"):
     ax.set_xticklabels(datasets)
     ax.legend(fontsize=8)
 
-    plt.tight_layout()
-    plt.savefig(fig_path(filename), dpi=150, bbox_inches="tight")
-    plt.close()
+    save_fig(filename)

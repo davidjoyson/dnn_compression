@@ -83,49 +83,16 @@ def _run_component(results, timings, epochs, seeds):
     timings["Component Ablation"] = time.time() - t0
 
 
-def _run_har(results, timings, epochs, seeds, fine_tune_epochs=3, model_dir=None):
-    print("\n=== UCI HAR (Wearable Sensors) ===\n")
-    t0 = time.time()
-    store_simple(results, timings, "UCI HAR",
-                 run_har(epochs=epochs, seeds=seeds, fine_tune_epochs=fine_tune_epochs,
-                         model_dir=model_dir),
-                 time.time() - t0)
+_EXP_TABLE = {
+    "har":  ("UCI HAR (Wearable Sensors)",        "UCI HAR",       run_har),
+    "ecg":  ("ECG Heartbeat (MIT-BIH, 5-class)",  "ECG Heartbeat", run_ecg),
+    "eeg":  ("EEG Brainwave (Emotions, 3-class)",  "EEG Brainwave", run_eeg),
+    "hapt": ("HAPT (UCI Smartphone, 12-class)",    "HAPT",          run_hapt),
+}
 
-
-def _run_ecg(results, timings, epochs, seeds, fine_tune_epochs=3, model_dir=None):
-    print("\n=== ECG Heartbeat (MIT-BIH, 5-class) ===\n")
-    t0 = time.time()
-    store_simple(results, timings, "ECG Heartbeat",
-                 run_ecg(epochs=epochs, seeds=seeds, fine_tune_epochs=fine_tune_epochs,
-                         model_dir=model_dir),
-                 time.time() - t0)
-
-
-def _run_eeg(results, timings, epochs, seeds, fine_tune_epochs=3, model_dir=None):
-    print("\n=== EEG Brainwave (Emotions, 3-class) ===\n")
-    t0 = time.time()
-    store_simple(results, timings, "EEG Brainwave",
-                 run_eeg(epochs=epochs, seeds=seeds, fine_tune_epochs=fine_tune_epochs,
-                         model_dir=model_dir),
-                 time.time() - t0)
-
-
-def _run_hapt(results, timings, epochs, seeds, fine_tune_epochs=3, model_dir=None):
-    print("\n=== HAPT (UCI Smartphone, 12-class) ===\n")
-    t0 = time.time()
-    store_simple(results, timings, "HAPT",
-                 run_hapt(epochs=epochs, seeds=seeds, fine_tune_epochs=fine_tune_epochs,
-                          model_dir=model_dir),
-                 time.time() - t0)
-
-
-REGISTRY = {
+_ABLATION_REGISTRY = {
     "ablation":  _run_ablation,
     "component": _run_component,
-    "har":       _run_har,
-    "ecg":       _run_ecg,
-    "eeg":       _run_eeg,
-    "hapt":      _run_hapt,
 }
 
 # ------------------------------------------------------------------ #
@@ -178,11 +145,6 @@ def main():
     sys.stdout = _Tee(sys.__stdout__, _log_fh)
     sys.stderr = _Tee(sys.__stderr__, _log_fh)
 
-    print(f"\n=== Running: {', '.join(args.exp)} | epochs={args.epochs} ===")
-    print(f"    Output dir: {run_dir}")
-    print(f"    Log file  : {log_path}\n")
-
-    _fine_tune_runners = {"har", "ecg", "eeg", "hapt"}
     _model_dirs = {
         "har":  os.path.join(_models_root, "har"),
         "ecg":  os.path.join(_models_root, "ecg"),
@@ -191,28 +153,39 @@ def main():
     }
 
     results, timings = {}, {}
-    pbar = tqdm(total=len(args.exp), desc="Experiments", colour="cyan")
-    for key in args.exp:
-        if key in _fine_tune_runners:
-            REGISTRY[key](results, timings, args.epochs, tuple(args.seeds), args.fine_tune_epochs,
-                          model_dir=_model_dirs.get(key))
-        else:
-            REGISTRY[key](results, timings, args.epochs, tuple(args.seeds))
-        pbar.set_postfix({"done": key})
-        pbar.update(1)
-    pbar.close()
+    try:
+        print(f"\n=== Running: {', '.join(args.exp)} | epochs={args.epochs} ===")
+        print(f"    Output dir: {run_dir}")
+        print(f"    Log file  : {log_path}\n")
 
-    print_summary(results, timings)
-    generate_plots(results)
-    save_metrics_csv(results, run_dir)
-    save_per_seed_csv(results, run_dir)
-    save_summary_txt(results, timings, run_dir)
+        pbar = tqdm(total=len(args.exp), desc="Experiments", colour="cyan")
+        for key in args.exp:
+            if key in _EXP_TABLE:
+                banner, result_key, run_fn = _EXP_TABLE[key]
+                print(f"\n=== {banner} ===\n")
+                t0 = time.time()
+                store_simple(results, timings, result_key,
+                             run_fn(epochs=args.epochs, seeds=tuple(args.seeds),
+                                    fine_tune_epochs=args.fine_tune_epochs,
+                                    model_dir=_model_dirs.get(key)),
+                             time.time() - t0)
+            else:
+                _ABLATION_REGISTRY[key](results, timings, args.epochs, tuple(args.seeds))
+            pbar.set_postfix({"done": key})
+            pbar.update(1)
+        pbar.close()
 
-    sys.stdout = sys.__stdout__
-    sys.stderr = sys.__stderr__
-    _log_fh.close()
+        print_summary(results, timings)
+        generate_plots(results)
+        save_metrics_csv(results, run_dir)
+        save_per_seed_csv(results, run_dir)
+        save_summary_txt(results, timings, run_dir)
+    finally:
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__
+        _log_fh.close()
+
     print(f"  Log saved      -> {log_path}")
-
     return results
 
 

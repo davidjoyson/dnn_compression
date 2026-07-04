@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from .save_utils import fig_path
+from .save_utils import save_fig
 from .style import apply_style, METHOD_COLORS
 
 
@@ -30,9 +30,6 @@ def plot_weight_distribution(weight_dist, title="", filename=None):
     ax.set_title(f"Weight Distribution{' — ' + title if title else ''}", pad=14)
     ax.legend()
 
-    plt.tight_layout()
     if filename is None:
-        slug = title.lower().replace(" ", "_")
-        filename = f"{slug}_weight_dist.png"
-    plt.savefig(fig_path(filename), dpi=150, bbox_inches="tight")
-    plt.close()
+        filename = f"{title.lower().replace(' ', '_')}_weight_dist.png"
+    save_fig(filename)

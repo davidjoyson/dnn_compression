@@ -1,17 +1,19 @@
 import copy
-import io
 
 import torch
 from collections import defaultdict
 from src.training.train import train
 
 
+def _layer_name(param_name):
+    return param_name.rsplit(".", 1)[0] if "." in param_name else param_name
+
+
 def _compute_layer_scales(model):
     """One shared scale per layer group (weight + bias share a single scale)."""
     groups = defaultdict(list)
     for name, p in model.named_parameters():
-        layer = name.rsplit(".", 1)[0] if "." in name else name
-        groups[layer].append(p.data)
+        groups[_layer_name(name)].append(p.data)
 
     scales = {}
     for layer, tensors in groups.items():
@@ -28,8 +30,7 @@ def _quantize(model):
     compressed = {}
     with torch.no_grad():
         for name, p in model.named_parameters():
-            layer = name.rsplit(".", 1)[0] if "." in name else name
-            scale = layer_scales[layer]
+            scale = layer_scales[_layer_name(name)]
             q = torch.round(p.data / scale).clamp(-127, 127).to(torch.int8)
             compressed[name] = {"q": q.cpu(), "scale": scale.cpu()}
     return compressed
@@ -74,7 +75,7 @@ def compressed_size_bytes(compressed):
     seen_layers = set()
     for name, entry in compressed.items():
         total += entry["q"].nelement()
-        layer = name.rsplit(".", 1)[0] if "." in name else name
+        layer = _layer_name(name)
         if layer not in seen_layers:
             total += 4
             seen_layers.add(layer)
@@ -139,7 +140,8 @@ def dynamic_model_size_bytes(model):
         if hasattr(mod, "weight") and hasattr(mod, "bias"):
             try:
                 total += mod.weight().int_repr().numel()      # 1 byte per int8 weight
-                total += mod.bias().numel() * 4               # 4 bytes per float32 bias
-            except Exception:
+                if mod.bias() is not None:
+                    total += mod.bias().numel() * 4           # 4 bytes per float32 bias
+            except (AttributeError, RuntimeError):
                 pass
     return total

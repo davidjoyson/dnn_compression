@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from .save_utils import fig_path
+from .save_utils import save_fig
 from .style import apply_style, METHOD_COLORS, PALETTE
 
 
@@ -57,9 +57,6 @@ def plot_per_class_f1(conf_matrix_dict, class_names, title="", filename=None):
         for i, v in enumerate(f1_c):
             ax.text(i + width / 2, v + tick_h, f"{v:.2f}", ha="center", va="bottom", fontsize=8)
 
-    plt.tight_layout()
     if filename is None:
-        slug = title.lower().replace(" ", "_")
-        filename = f"{slug}_per_class_f1.png"
-    plt.savefig(fig_path(filename), dpi=150, bbox_inches="tight")
-    plt.close()
+        filename = f"{title.lower().replace(' ', '_')}_per_class_f1.png"
+    save_fig(filename)

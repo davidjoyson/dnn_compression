@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from .save_utils import fig_path
+from .save_utils import save_fig
 from .style import apply_style
 
 
@@ -50,7 +50,4 @@ def plot_confusion_matrix(conf_matrix_data, title="", filename=None, class_names
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     fig.suptitle(f"{title} — Confusion Matrix", fontsize=12, fontweight="bold", y=1.02)
-    plt.tight_layout()
-    out = filename or f"{title.lower().replace(' ', '_')}_confusion.png"
-    plt.savefig(fig_path(out), dpi=150, bbox_inches="tight")
-    plt.close()
+    save_fig(filename or f"{title.lower().replace(' ', '_')}_confusion.png")

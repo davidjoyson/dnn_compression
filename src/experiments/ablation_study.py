@@ -121,8 +121,9 @@ def run_compression_component_ablation(
         acc_by_condition["quant_only"].append(evaluate(m_quant, X_test, y_test, num_classes=num_classes))
         mse_by_condition["quant_only"].append(_mse(m_quant))
 
-        # both: standard pipeline
+        # both: topology sharing + quantization
         m_both = copy.deepcopy(base_model)
+        apply_topology_sharing(m_both)
         compressed_both = compress_model(m_both)
         decompress_model(compressed_both, m_both)
         acc_by_condition["both"].append(evaluate(m_both, X_test, y_test, num_classes=num_classes))

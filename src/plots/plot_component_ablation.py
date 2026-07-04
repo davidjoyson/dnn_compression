@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from .save_utils import fig_path
+from .save_utils import save_fig
 from .style import apply_style, PALETTE
 
 CONDITION_LABELS = {
@@ -48,6 +48,4 @@ def plot_component_ablation(results, filename="component_ablation.png"):
         ax.text(i, m + s + tick_h, label, ha="center", va="bottom",
                 fontsize=8.5, fontweight="bold")
 
-    plt.tight_layout()
-    plt.savefig(fig_path(filename), dpi=150, bbox_inches="tight")
-    plt.close()
+    save_fig(filename)

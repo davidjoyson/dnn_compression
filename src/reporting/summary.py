@@ -102,19 +102,6 @@ def print_summary(results, timings):
             print(time_str, end="")
             continue
 
-        if name == "Folktables Multi-State" and isinstance(r, dict) and "test_states" in r:
-            print(f"{name} (trained on {r['train_state']}):")
-            mse_u_list = r.get("mse_uncompressed", [float("nan")] * len(r["test_states"]))
-            mse_c_list = r.get("mse_compressed",   [float("nan")] * len(r["test_states"]))
-            for state, au, ac, mu, mc in zip(
-                r["test_states"], r["accuracy_uncompressed"], r["accuracy_compressed"],
-                mse_u_list, mse_c_list,
-            ):
-                print(f"  {state}: u_acc={au:.4f} u_mse={mu:.4f}  c_acc={ac:.4f} c_mse={mc:.4f}")
-            print(f"  Size (U -> C)    : {r['size_uncompressed']} -> {r['size_compressed']} bytes")
-            print(time_str, end="")
-            continue
-
         if not isinstance(r, dict) or "accuracy_uncompressed" not in r:
             print(f"{name}: Completed (complex output)")
             print(time_str, end="")
@@ -159,33 +146,33 @@ def print_summary(results, timings):
         print(f"{name}{seed_note}:")
         print(f"  Uncompressed Acc : {acc_u:.4f} +/- {std_u:.4f}")
         print(f"  Snowflake (int8) : {acc_c:.4f} +/- {std_c:.4f}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed','?')} bytes]")
-        if acc_global == acc_global:
+        if not math.isnan(acc_global):
             print(f"  Global int8      : {acc_global:.4f} +/- {std_global:.4f}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_global','?')} bytes]")
-        if acc_dynamic == acc_dynamic:
+        if not math.isnan(acc_dynamic):
             print(f"  Dynamic (int8)   : {acc_dynamic:.4f} +/- {std_dynamic:.4f}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_dynamic','?')} bytes]")
-        if acc_global == acc_global and acc_dynamic == acc_dynamic:
+        if not math.isnan(acc_global) and not math.isnan(acc_dynamic):
             print(f"  -- Compression delta: Snowflake(8b)={acc_c - acc_u:+.4f} | Global(8b)={acc_global - acc_u:+.4f} | Dynamic(8b)={acc_dynamic - acc_u:+.4f}")
-        if acc_mlp == acc_mlp:
+        if not math.isnan(acc_mlp):
             print(f"  MLP Baseline Acc : {acc_mlp:.4f} +/- {std_mlp:.4f}")
-        if acc_mlp_c == acc_mlp_c:
+        if not math.isnan(acc_mlp_c):
             print(f"  MLP Compressed   : {acc_mlp_c:.4f} +/- {std_mlp_c:.4f}")
-        if f1_u == f1_u:
+        if not math.isnan(f1_u):
             print(f"  Uncompressed F1  : {f1_u:.4f}")
             print(f"  Snowflake F1     : {f1_c:.4f}  (delta={f1_c - f1_u:+.4f})")
-        if f1_global == f1_global:
+        if not math.isnan(f1_global):
             print(f"  Global int8 F1   : {f1_global:.4f}  (delta={f1_global - f1_u:+.4f})")
-        if f1_dyn == f1_dyn:
+        if not math.isnan(f1_dyn):
             print(f"  Dynamic F1       : {f1_dyn:.4f}  (delta={f1_dyn - f1_u:+.4f})")
-        if f1_mlp == f1_mlp:
+        if not math.isnan(f1_mlp):
             print(f"  MLP Baseline F1  : {f1_mlp:.4f}")
-        if f1_mlp_c == f1_mlp_c:
+        if not math.isnan(f1_mlp_c):
             print(f"  MLP Compressed F1: {f1_mlp_c:.4f}")
-        if mse_u == mse_u:
+        if not math.isnan(mse_u):
             print(f"  Uncompressed MSE : {mse_u:.4f} +/- {std_mse_u:.4f}")
             print(f"  Compressed MSE   : {mse_c:.4f} +/- {std_mse_c:.4f}")
-        if mse_mlp == mse_mlp:
+        if not math.isnan(mse_mlp):
             print(f"  MLP Baseline MSE : {mse_mlp:.4f} +/- {std_mse_mlp:.4f}")
-        if mse_mlp_c == mse_mlp_c:
+        if not math.isnan(mse_mlp_c):
             print(f"  MLP Compressed MSE:{mse_mlp_c:.4f} +/- {std_mse_mlp_c:.4f}")
         if r.get("size_mlp_uncompressed") is not None:
             print(f"  MLP Size         : {r['size_mlp_uncompressed']} -> {r['size_mlp_compressed']} bytes")
@@ -283,11 +270,14 @@ def save_per_seed_csv(results, run_dir):
 
 
 def save_summary_txt(results, timings, run_dir):
-    buf = io.StringIO()
     import sys
-    old_stdout, sys.stdout = sys.stdout, buf
-    print_summary(results, timings)
-    sys.stdout = old_stdout
+    buf = io.StringIO()
+    old_stdout = sys.stdout
+    sys.stdout = buf
+    try:
+        print_summary(results, timings)
+    finally:
+        sys.stdout = old_stdout
     txt_path = os.path.join(run_dir, "summary.txt")
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write(buf.getvalue())

@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
-from .save_utils import fig_path
+from .save_utils import save_fig
 from .style import apply_style, METHOD_COLORS, PALETTE
 
 _DS_MARKERS = {
@@ -64,6 +64,4 @@ def plot_pareto(all_results, filename="pareto_compression.png"):
     ax.set_xlabel("Model Size (KB)")
     ax.set_ylabel("Accuracy")
     ax.set_title("Compression–Accuracy Trade-off (Pareto)", pad=14)
-    plt.tight_layout()
-    plt.savefig(fig_path(filename), dpi=150, bbox_inches="tight")
-    plt.close()
+    save_fig(filename)

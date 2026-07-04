@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score
 from sklearn.preprocessing import label_binarize
-from .save_utils import fig_path
+from .save_utils import save_fig
 from .style import apply_style
 
 
@@ -75,9 +75,6 @@ def plot_roc_pr(curve_data, title="", filename=None):
     ax_pr.set_title(f"Precision-Recall{' — ' + title if title else ''}")
     ax_pr.legend(loc="upper right")
 
-    plt.tight_layout()
     if filename is None:
-        slug = title.lower().replace(" ", "_").replace("/", "_")
-        filename = f"{slug}_roc_pr.png"
-    plt.savefig(fig_path(filename), dpi=150, bbox_inches="tight")
-    plt.close()
+        filename = f"{title.lower().replace(' ', '_').replace('/', '_')}_roc_pr.png"
+    save_fig(filename)
