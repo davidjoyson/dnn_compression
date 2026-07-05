@@ -4,7 +4,7 @@ from torch.utils.data import TensorDataset, DataLoader
 
 
 def train(model, X, y, epochs=1, lr=1e-3, batch_size=64,
-          X_val=None, y_val=None, num_classes=1):
+          X_val=None, y_val=None, num_classes=1, weight_decay=0.0):
     """
     Training loop for all experiments.
     - X_val / y_val  → if provided, computes val loss per epoch and returns
@@ -30,7 +30,7 @@ def train(model, X, y, epochs=1, lr=1e-3, batch_size=64,
         X_val = X_val.to(device)
         y_val = y_val.to(device)
 
-    opt = torch.optim.Adam(model.parameters(), lr=lr)
+    opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     model.train()
     history = []

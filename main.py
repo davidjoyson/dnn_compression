@@ -31,10 +31,8 @@ from src.reporting import (
 SEEDS  = (42, 0, 7)
 EPOCHS = 50
 
-ALL_EXPERIMENTS = [
-    # "ablation", "component",  # run manually when needed: --exp ablation component
-    "har", "ecg", "eeg", "hapt",
-]
+ALL_EXPERIMENTS = ["har", "ecg", "eeg", "hapt", "ablation", "component"]
+_DEFAULT_EXPERIMENTS = ["har", "ecg", "eeg", "hapt"]
 
 class _Tee:
     """Mirror a stream to both the terminal and a log file."""
@@ -105,8 +103,8 @@ def main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
-        "--exp", nargs="+", choices=ALL_EXPERIMENTS, default=ALL_EXPERIMENTS, metavar="EXP",
-        help="Experiments to run (default: all).\nChoices: " + ", ".join(ALL_EXPERIMENTS),
+        "--exp", nargs="+", choices=ALL_EXPERIMENTS, default=_DEFAULT_EXPERIMENTS, metavar="EXP",
+        help="Experiments to run (default: har ecg eeg hapt).\nChoices: " + ", ".join(ALL_EXPERIMENTS),
     )
     parser.add_argument("--epochs", type=int, default=EPOCHS,
                         help=f"Training epochs per experiment (default: {EPOCHS})")
@@ -131,9 +129,7 @@ def main():
         print(f"Size: {mlp.size_bytes():,} bytes")
         return
 
-    n = len(args.exp)
-    tag = "all" if n == len(ALL_EXPERIMENTS) else f"{n}exp"
-    label = f"{tag}_epo{args.epochs}"
+    label = "_".join(args.exp) + f"_epo{args.epochs}"
     run_dir = make_run_dir(label=label)
     _save_utils.set_fig_dir(os.path.join(run_dir, "figures"))
     _models_root = os.path.join(run_dir, "models")

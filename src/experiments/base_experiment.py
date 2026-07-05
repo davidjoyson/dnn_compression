@@ -18,7 +18,7 @@ from src.compression.compression_pipeline import (
 )
 
 
-def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_epochs, batch_size=128, model_dir=None):
+def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_epochs, batch_size=128, model_dir=None, weight_decay=0.0):
     """
     Shared experiment loop for all tabular datasets.
 
@@ -72,6 +72,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         hist_u, val_hist_u = train(
             model_u, X_train, y_train, epochs=epochs,
             X_val=X_val, y_val=y_val, num_classes=num_classes, batch_size=batch_size,
+            weight_decay=weight_decay,
         )
         acc_u_list.append(evaluate(model_u, X_test, y_test, num_classes=num_classes))
         f1_u_list.append(f1_eval(model_u, X_test, y_test, num_classes=num_classes))

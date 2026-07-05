@@ -15,4 +15,5 @@ def run_eeg(epochs=50, seeds=(42,), fine_tune_epochs=3, model_dir=None):
         fine_tune_epochs=fine_tune_epochs,
         batch_size=128,
         model_dir=model_dir,
+        weight_decay=0.0,
     )
