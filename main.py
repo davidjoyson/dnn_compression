@@ -1,5 +1,6 @@
 import argparse
 import os
+import pickle
 import sys
 import time
 
@@ -113,6 +114,10 @@ def main():
     parser.add_argument("--seeds", type=int, nargs="+", default=list(SEEDS),
                         help=f"Random seeds to average over (default: {list(SEEDS)})")
     parser.add_argument("--arch", action="store_true", help="Print model architectures and exit")
+    parser.add_argument(
+        "--replot", nargs="+", metavar="RUN_DIR",
+        help="Load results.pkl from one or more run dirs, merge, and regenerate plots without re-training.",
+    )
     args = parser.parse_args()
 
     if args.arch:
@@ -128,6 +133,26 @@ def main():
         summary(mlp, input_size=(1, input_dim))
         print(f"Size: {mlp.size_bytes():,} bytes")
         return
+
+    if args.replot:
+        merged_results, merged_timings = {}, {}
+        for d in args.replot:
+            pkl_path = os.path.join(d, "results.pkl")
+            with open(pkl_path, "rb") as f:
+                data = pickle.load(f)
+            merged_results.update(data["results"])
+            merged_timings.update(data["timings"])
+        run_dir = make_run_dir(label="replot")
+        _save_utils.set_fig_dir(os.path.join(run_dir, "figures"))
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        print(f"\n=== Replot from {len(args.replot)} run(s) -> {run_dir} ===\n")
+        generate_plots(merged_results)
+        print_summary(merged_results, merged_timings)
+        save_metrics_csv(merged_results, run_dir)
+        save_per_seed_csv(merged_results, run_dir)
+        save_summary_txt(merged_results, merged_timings, run_dir)
+        print(f"  Figures -> {os.path.join(run_dir, 'figures')}")
+        return merged_results
 
     label = "_".join(args.exp) + f"_epo{args.epochs}"
     run_dir = make_run_dir(label=label)
@@ -176,6 +201,10 @@ def main():
         save_metrics_csv(results, run_dir)
         save_per_seed_csv(results, run_dir)
         save_summary_txt(results, timings, run_dir)
+        pkl_path = os.path.join(run_dir, "results.pkl")
+        with open(pkl_path, "wb") as f:
+            pickle.dump({"results": results, "timings": timings}, f)
+        print(f"  Results saved  -> {pkl_path}")
     finally:
         sys.stdout = sys.__stdout__
         sys.stderr = sys.__stderr__
