@@ -129,6 +129,43 @@ def compress_model_dynamic(model):
     return quantized
 
 
+# ------------------------------------------------------------------ #
+# PyTorch static quantization (FX graph mode)                        #
+# Both weights AND activations quantized — true INT8 arithmetic      #
+# ------------------------------------------------------------------ #
+
+def compress_model_static(model, calibration_data, backend="fbgemm"):
+    """
+    Static INT8 quantization via FX graph mode.
+    Calibrates activation ranges from calibration_data[0] (labels unused).
+    backend: "fbgemm" (x86) or "qnnpack" (ARM/edge).
+    """
+    from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
+    import torch.ao.quantization as tq
+
+    model_copy = copy.deepcopy(model).cpu().eval()
+    qconfig_mapping = tq.QConfigMapping().set_global(tq.get_default_qconfig(backend))
+    X_cal = calibration_data[0].cpu()
+    prepared = prepare_fx(model_copy, qconfig_mapping, (X_cal[:1],))
+    with torch.no_grad():
+        prepared(X_cal)
+    return convert_fx(prepared)
+
+
+def static_model_size_bytes(model):
+    """int8 weights (1B each) + float32 biases (4B each) for FX-quantized Linear layers."""
+    total = 0
+    for _, mod in model.named_modules():
+        if hasattr(mod, "weight") and hasattr(mod, "bias"):
+            try:
+                total += mod.weight().int_repr().nelement()
+                if mod.bias() is not None:
+                    total += mod.bias().nelement() * 4
+            except (AttributeError, RuntimeError):
+                pass
+    return total
+
+
 def dynamic_model_size_bytes(model):
     """True compressed size: int8 weight bytes + float32 bias bytes per Linear layer.
 

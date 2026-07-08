@@ -15,6 +15,8 @@ from src.compression.compression_pipeline import (
     compress_model_global,
     compress_model_dynamic,
     dynamic_model_size_bytes,
+    compress_model_static,
+    static_model_size_bytes,
 )
 
 
@@ -26,14 +28,14 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
       - For fixed loaders (HAR/ECG/EEG/HAPT): pass lambda seed: load_dataset()
     """
     acc_u_list, acc_c_list, acc_mlp_list, acc_mlp_c_list = [], [], [], []
-    acc_global_list, acc_dynamic_list = [], []
+    acc_global_list, acc_dynamic_list, acc_static_list = [], [], []
     best_acc_u, best_state_u = -1, None
     best_acc_c, best_compressed_c = -1, None
     best_acc_mlp, best_state_mlp = -1, None
-    f1_u_list, f1_c_list, f1_global_list, f1_dynamic_list, f1_mlp_list, f1_mlp_c_list = [], [], [], [], [], []
+    f1_u_list, f1_c_list, f1_global_list, f1_dynamic_list, f1_static_list, f1_mlp_list, f1_mlp_c_list = [], [], [], [], [], [], []
     conf_matrix_u, conf_matrix_c = None, None
     size_u, size_c = None, None
-    size_global, size_dynamic = None, None
+    size_global, size_dynamic, size_static = None, None, None
     size_mlp_u, size_mlp_c = None, None
     loss_history = None
     weight_dist = None
@@ -125,11 +127,24 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         acc_dynamic_list.append(evaluate(model_dynamic, X_test, y_test, num_classes=num_classes, device="cpu"))
         f1_dynamic_list.append(f1_eval(model_dynamic, X_test, y_test, num_classes=num_classes, device="cpu"))
 
+        # Static quantization (true INT8: both weights and activations)
+        model_u.load_state_dict(original_state)
+        try:
+            model_static = compress_model_static(model_u, calibration_data=(X_train, y_train))
+            acc_static_list.append(evaluate(model_static, X_test, y_test, num_classes=num_classes, device="cpu"))
+            f1_static_list.append(f1_eval(model_static, X_test, y_test, num_classes=num_classes, device="cpu"))
+        except Exception as e:
+            print(f"[warn] Static quantization failed: {e}")
+            acc_static_list.append(None)
+            f1_static_list.append(None)
+            model_static = None
+
         if size_u is None:
             size_u = model_u.size_bytes()
             size_c = compressed_size_bytes(compressed)
             size_global = compressed_size_bytes(compressed_global)
             size_dynamic = dynamic_model_size_bytes(model_dynamic)
+            size_static = static_model_size_bytes(model_static) if model_static is not None else None
 
         if inference_times is None:
             model_u.load_state_dict(original_state)
@@ -155,6 +170,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
                 "uncompressed_ms":  _time_ms(model_u),
                 "compressed_ms":    _time_ms(copy.deepcopy(model_u)),
                 "dynamic_ms":       _time_ms(model_dynamic),
+                "static_ms":        _time_ms(model_static) if model_static is not None else None,
                 "n_test":           n_test,
                 "flops_per_sample": flops_per_sample,
                 "activation_kb":    activation_kb,
@@ -231,12 +247,14 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "uncompressed": _lat_us("uncompressed_ms"),
             "compressed":   _lat_us("compressed_ms"),
             "dynamic":      _lat_us("dynamic_ms"),
+            "static":       _lat_us("static_ms"),
             "mlp":          _lat_us("mlp_ms"),
         },
         "throughput_sps": {
             "uncompressed": _tput("uncompressed_ms"),
             "compressed":   _tput("compressed_ms"),
             "dynamic":      _tput("dynamic_ms"),
+            "static":       _tput("static_ms"),
             "mlp":          _tput("mlp_ms"),
         },
     }
@@ -244,6 +262,9 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     n     = len(seeds)
     _mean = lambda lst: float(sum(lst) / n)
     _std  = lambda lst: float(torch.tensor(lst).std().item()) if n > 1 else 0.0
+    # static quant may fail on some seeds; filter None before aggregating
+    _mean_safe = lambda lst: float(sum(x for x in lst if x is not None) / max(1, sum(1 for x in lst if x is not None))) if any(x is not None for x in lst) else None
+    _std_safe  = lambda lst: float(torch.tensor([x for x in lst if x is not None]).std().item()) if sum(1 for x in lst if x is not None) > 1 else 0.0
 
     return {
         "accuracy": {
@@ -251,6 +272,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "compressed":          _mean(acc_c_list),
             "compressed_global":   _mean(acc_global_list),
             "compressed_dynamic":  _mean(acc_dynamic_list),
+            "compressed_static":   _mean_safe(acc_static_list),
             "mlp_baseline":        _mean(acc_mlp_list),
             "mlp_compressed":      _mean(acc_mlp_c_list),
         },
@@ -259,6 +281,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "compressed":          _std(acc_c_list),
             "compressed_global":   _std(acc_global_list),
             "compressed_dynamic":  _std(acc_dynamic_list),
+            "compressed_static":   _std_safe(acc_static_list),
             "mlp_baseline":        _std(acc_mlp_list),
             "mlp_compressed":      _std(acc_mlp_c_list),
         },
@@ -267,6 +290,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "compressed":          _mean(f1_c_list),
             "compressed_global":   _mean(f1_global_list),
             "compressed_dynamic":  _mean(f1_dynamic_list),
+            "compressed_static":   _mean_safe(f1_static_list),
             "mlp_baseline":        _mean(f1_mlp_list),
             "mlp_compressed":      _mean(f1_mlp_c_list),
         },
@@ -275,6 +299,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "compressed":          _std(f1_c_list),
             "compressed_global":   _std(f1_global_list),
             "compressed_dynamic":  _std(f1_dynamic_list),
+            "compressed_static":   _std_safe(f1_static_list),
             "mlp_baseline":        _std(f1_mlp_list),
             "mlp_compressed":      _std(f1_mlp_c_list),
         },
@@ -283,6 +308,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "compressed":         size_c,
             "compressed_global":  size_global,
             "compressed_dynamic": size_dynamic,
+            "compressed_static":  size_static,
             "mlp_uncompressed":   size_mlp_u,
             "mlp_compressed":     size_mlp_c,
         },
@@ -298,14 +324,17 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "acc_compressed":         acc_c_list,
             "acc_compressed_global":  acc_global_list,
             "acc_compressed_dynamic": acc_dynamic_list,
+            "acc_compressed_static":  acc_static_list,
             "f1_uncompressed":        f1_u_list,
             "f1_compressed":          f1_c_list,
             "f1_compressed_global":   f1_global_list,
             "f1_compressed_dynamic":  f1_dynamic_list,
+            "f1_compressed_static":   f1_static_list,
         },
         "inference_time_uncompressed_ms": inference_times["uncompressed_ms"] if inference_times else None,
         "inference_time_compressed_ms":   inference_times["compressed_ms"]   if inference_times else None,
         "inference_time_dynamic_ms":      inference_times["dynamic_ms"]      if inference_times else None,
+        "inference_time_static_ms":       inference_times.get("static_ms")   if inference_times else None,
         "inference_time_mlp_ms":          inference_times["mlp_ms"]          if inference_times else None,
         "edge_profile":                   edge_profile,
     }
