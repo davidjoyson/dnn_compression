@@ -137,6 +137,14 @@ def print_summary(results, timings):
         std_global   = to_float(r.get("std_compressed_global",       0.0))
         acc_dynamic  = to_float(r.get("accuracy_compressed_dynamic", float("nan")))
         std_dynamic  = to_float(r.get("std_compressed_dynamic",      0.0))
+        acc_static   = to_float(r.get("accuracy_compressed_static",  float("nan")))
+        std_static   = to_float(r.get("std_compressed_static",       0.0))
+        acc_perchan  = to_float(r.get("accuracy_compressed_perchan", float("nan")))
+        std_perchan  = to_float(r.get("std_compressed_perchan",      0.0))
+        acc_qat      = to_float(r.get("accuracy_compressed_qat",     float("nan")))
+        std_qat      = to_float(r.get("std_compressed_qat",          0.0))
+        acc_mixed    = to_float(r.get("accuracy_compressed_mixed",   float("nan")))
+        std_mixed    = to_float(r.get("std_compressed_mixed",        0.0))
         f1_u      = to_float(r.get("f1_uncompressed",       float("nan")))
         f1_c      = to_float(r.get("f1_compressed",         float("nan")))
         f1_global = to_float(r.get("f1_compressed_global",  float("nan")))
@@ -167,6 +175,18 @@ def print_summary(results, timings):
         if not math.isnan(acc_dynamic):
             ci_dy = to_float(_ci.get("compressed_dynamic", 0.0))
             print(f"  Dynamic (int8)   : {acc_dynamic:.4f} +/- {std_dynamic:.4f}{_ci_str(ci_dy)}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_dynamic','?')} bytes]")
+        if not math.isnan(acc_static):
+            ci_st = to_float(_ci.get("compressed_static", 0.0))
+            print(f"  Static (int8)    : {acc_static:.4f} +/- {std_static:.4f}{_ci_str(ci_st)}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_static','?')} bytes]")
+        if not math.isnan(acc_perchan):
+            ci_pc = to_float(_ci.get("compressed_perchan", 0.0))
+            print(f"  Per-channel      : {acc_perchan:.4f} +/- {std_perchan:.4f}{_ci_str(ci_pc)}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_perchan','?')} bytes]")
+        if not math.isnan(acc_qat):
+            ci_qt = to_float(_ci.get("compressed_qat", 0.0))
+            print(f"  QAT (int8)       : {acc_qat:.4f} +/- {std_qat:.4f}{_ci_str(ci_qt)}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_qat','?')} bytes]")
+        if not math.isnan(acc_mixed):
+            ci_mx = to_float(_ci.get("compressed_mixed", 0.0))
+            print(f"  Mixed precision  : {acc_mixed:.4f} +/- {std_mixed:.4f}{_ci_str(ci_mx)}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_mixed','?')} bytes]")
         if not math.isnan(acc_global) and not math.isnan(acc_dynamic):
             print(f"  -- Compression delta: Snowflake(8b)={acc_c - acc_u:+.4f} | Global(8b)={acc_global - acc_u:+.4f} | Dynamic(8b)={acc_dynamic - acc_u:+.4f}")
         if not math.isnan(acc_mlp):
