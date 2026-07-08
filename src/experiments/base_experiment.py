@@ -17,6 +17,12 @@ from src.compression.compression_pipeline import (
     dynamic_model_size_bytes,
     compress_model_static,
     static_model_size_bytes,
+    compress_model_per_channel,
+    decompress_model_per_channel,
+    per_channel_size_bytes,
+    compress_model_qat,
+    compress_model_mixed,
+    mixed_model_size_bytes,
 )
 from src.analysis.branch_diversity import compute_branch_diversity
 
@@ -30,13 +36,16 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     """
     acc_u_list, acc_c_list, acc_mlp_list, acc_mlp_c_list = [], [], [], []
     acc_global_list, acc_dynamic_list, acc_static_list = [], [], []
+    acc_perchan_list, acc_qat_list, acc_mixed_list = [], [], []
     best_acc_u, best_state_u = -1, None
     best_acc_c, best_compressed_c = -1, None
     best_acc_mlp, best_state_mlp = -1, None
     f1_u_list, f1_c_list, f1_global_list, f1_dynamic_list, f1_static_list, f1_mlp_list, f1_mlp_c_list = [], [], [], [], [], [], []
+    f1_perchan_list, f1_qat_list, f1_mixed_list = [], [], []
     conf_matrix_u, conf_matrix_c = None, None
     size_u, size_c = None, None
     size_global, size_dynamic, size_static = None, None, None
+    size_perchan, size_qat, size_mixed = None, None, None
     size_mlp_u, size_mlp_c = None, None
     loss_history = None
     weight_dist = None
@@ -146,12 +155,53 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             f1_static_list.append(None)
             model_static = None
 
+        # Per-channel int8 (one scale per output neuron)
+        model_u.load_state_dict(original_state)
+        try:
+            compressed_perchan = compress_model_per_channel(model_u)
+            decompress_model_per_channel(compressed_perchan, model_u)
+            acc_perchan_list.append(evaluate(model_u, X_test, y_test, num_classes=num_classes))
+            f1_perchan_list.append(f1_eval(model_u, X_test, y_test, num_classes=num_classes))
+        except Exception as e:
+            print(f"[warn] Per-channel quantization failed: {e}")
+            acc_perchan_list.append(None)
+            f1_perchan_list.append(None)
+            compressed_perchan = None
+
+        # QAT (quantization-aware training, fine-tuned with fake-quant nodes)
+        model_u.load_state_dict(original_state)
+        try:
+            model_qat = compress_model_qat(model_u, train_data=(X_train, y_train),
+                                           epochs=fine_tune_epochs, num_classes=num_classes)
+            acc_qat_list.append(evaluate(model_qat, X_test, y_test, num_classes=num_classes, device="cpu"))
+            f1_qat_list.append(f1_eval(model_qat, X_test, y_test, num_classes=num_classes, device="cpu"))
+        except Exception as e:
+            print(f"[warn] QAT failed: {e}")
+            acc_qat_list.append(None)
+            f1_qat_list.append(None)
+            model_qat = None
+
+        # Mixed precision (fc1 and out in float32, inner layers int8)
+        model_u.load_state_dict(original_state)
+        try:
+            model_mixed = compress_model_mixed(model_u, calibration_data=(X_train, y_train))
+            acc_mixed_list.append(evaluate(model_mixed, X_test, y_test, num_classes=num_classes, device="cpu"))
+            f1_mixed_list.append(f1_eval(model_mixed, X_test, y_test, num_classes=num_classes, device="cpu"))
+        except Exception as e:
+            print(f"[warn] Mixed precision failed: {e}")
+            acc_mixed_list.append(None)
+            f1_mixed_list.append(None)
+            model_mixed = None
+
         if size_u is None:
             size_u = model_u.size_bytes()
             size_c = compressed_size_bytes(compressed)
             size_global = compressed_size_bytes(compressed_global)
             size_dynamic = dynamic_model_size_bytes(model_dynamic)
             size_static = static_model_size_bytes(model_static) if model_static is not None else None
+            size_perchan = per_channel_size_bytes(compressed_perchan) if compressed_perchan is not None else None
+            size_qat = static_model_size_bytes(model_qat) if model_qat is not None else None
+            size_mixed = mixed_model_size_bytes(model_mixed) if model_mixed is not None else None
 
         if inference_times is None:
             model_u.load_state_dict(original_state)
@@ -280,6 +330,9 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "compressed_global":   _mean(acc_global_list),
             "compressed_dynamic":  _mean(acc_dynamic_list),
             "compressed_static":   _mean_safe(acc_static_list),
+            "compressed_perchan":  _mean_safe(acc_perchan_list),
+            "compressed_qat":      _mean_safe(acc_qat_list),
+            "compressed_mixed":    _mean_safe(acc_mixed_list),
             "mlp_baseline":        _mean(acc_mlp_list),
             "mlp_compressed":      _mean(acc_mlp_c_list),
         },
@@ -289,6 +342,9 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "compressed_global":   _std(acc_global_list),
             "compressed_dynamic":  _std(acc_dynamic_list),
             "compressed_static":   _std_safe(acc_static_list),
+            "compressed_perchan":  _std_safe(acc_perchan_list),
+            "compressed_qat":      _std_safe(acc_qat_list),
+            "compressed_mixed":    _std_safe(acc_mixed_list),
             "mlp_baseline":        _std(acc_mlp_list),
             "mlp_compressed":      _std(acc_mlp_c_list),
         },
@@ -298,6 +354,9 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "compressed_global":   _mean(f1_global_list),
             "compressed_dynamic":  _mean(f1_dynamic_list),
             "compressed_static":   _mean_safe(f1_static_list),
+            "compressed_perchan":  _mean_safe(f1_perchan_list),
+            "compressed_qat":      _mean_safe(f1_qat_list),
+            "compressed_mixed":    _mean_safe(f1_mixed_list),
             "mlp_baseline":        _mean(f1_mlp_list),
             "mlp_compressed":      _mean(f1_mlp_c_list),
         },
@@ -307,6 +366,9 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "compressed_global":   _std(f1_global_list),
             "compressed_dynamic":  _std(f1_dynamic_list),
             "compressed_static":   _std_safe(f1_static_list),
+            "compressed_perchan":  _std_safe(f1_perchan_list),
+            "compressed_qat":      _std_safe(f1_qat_list),
+            "compressed_mixed":    _std_safe(f1_mixed_list),
             "mlp_baseline":        _std(f1_mlp_list),
             "mlp_compressed":      _std(f1_mlp_c_list),
         },
@@ -316,6 +378,9 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "compressed_global":  size_global,
             "compressed_dynamic": size_dynamic,
             "compressed_static":  size_static,
+            "compressed_perchan": size_perchan,
+            "compressed_qat":     size_qat,
+            "compressed_mixed":   size_mixed,
             "mlp_uncompressed":   size_mlp_u,
             "mlp_compressed":     size_mlp_c,
         },
@@ -333,11 +398,17 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "acc_compressed_global":  acc_global_list,
             "acc_compressed_dynamic": acc_dynamic_list,
             "acc_compressed_static":  acc_static_list,
+            "acc_compressed_perchan": acc_perchan_list,
+            "acc_compressed_qat":     acc_qat_list,
+            "acc_compressed_mixed":   acc_mixed_list,
             "f1_uncompressed":        f1_u_list,
             "f1_compressed":          f1_c_list,
             "f1_compressed_global":   f1_global_list,
             "f1_compressed_dynamic":  f1_dynamic_list,
             "f1_compressed_static":   f1_static_list,
+            "f1_compressed_perchan":  f1_perchan_list,
+            "f1_compressed_qat":      f1_qat_list,
+            "f1_compressed_mixed":    f1_mixed_list,
         },
         "inference_time_uncompressed_ms": inference_times["uncompressed_ms"] if inference_times else None,
         "inference_time_compressed_ms":   inference_times["compressed_ms"]   if inference_times else None,

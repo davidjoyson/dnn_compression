@@ -166,6 +166,114 @@ def static_model_size_bytes(model):
     return total
 
 
+# ------------------------------------------------------------------ #
+# Per-channel int8 quantization                                       #
+# One scale per output neuron vs one scale per layer (Snowflake)     #
+# ------------------------------------------------------------------ #
+
+def _quantize_per_channel(model):
+    compressed = {}
+    with torch.no_grad():
+        for name, p in model.named_parameters():
+            if p.dim() >= 2:  # weight: one scale per output channel (row)
+                max_per_ch = p.data.abs().amax(dim=tuple(range(1, p.dim())), keepdim=True)
+                scales = (max_per_ch / 127.0).clamp(min=1e-8)
+                q = torch.round(p.data / scales).clamp(-127, 127).to(torch.int8)
+                compressed[name] = {"q": q.cpu(), "scales": scales.cpu()}
+            else:  # bias: keep float32
+                compressed[name] = {"float": p.data.cpu()}
+    return compressed
+
+
+def compress_model_per_channel(model):
+    return _quantize_per_channel(model)
+
+
+def decompress_model_per_channel(compressed, model):
+    with torch.no_grad():
+        for name, p in model.named_parameters():
+            entry = compressed[name]
+            if "float" in entry:
+                p.data = entry["float"].to(dtype=p.dtype, device=p.device)
+            else:
+                p.data = (entry["q"].float() * entry["scales"]).to(dtype=p.dtype, device=p.device)
+    return model
+
+
+def per_channel_size_bytes(compressed):
+    """int8 weights + float32 per-channel scales + float32 biases."""
+    total = 0
+    for entry in compressed.values():
+        if "float" in entry:
+            total += entry["float"].nelement() * 4
+        else:
+            total += entry["q"].nelement()
+            total += entry["scales"].nelement() * 4
+    return total
+
+
+# ------------------------------------------------------------------ #
+# Quantization-Aware Training (QAT, FX graph mode)                   #
+# Fake-quant nodes during training → better calibrated scales        #
+# ------------------------------------------------------------------ #
+
+def compress_model_qat(model, train_data, epochs=10, lr=1e-4, num_classes=1, backend="fbgemm"):
+    from torch.ao.quantization.quantize_fx import prepare_qat_fx, convert_fx
+    import torch.ao.quantization as tq
+
+    model_copy = copy.deepcopy(model).cpu()
+    qconfig_mapping = tq.QConfigMapping().set_global(tq.get_default_qat_qconfig(backend))
+    X_sample = train_data[0][:1].cpu()
+    prepared = prepare_qat_fx(model_copy, qconfig_mapping, (X_sample,))
+
+    X, y = train_data[0].cpu(), train_data[1].cpu()
+    train(prepared, X, y, epochs=epochs, lr=lr, num_classes=num_classes)
+
+    prepared = prepared.cpu().eval()
+    return convert_fx(prepared)
+
+
+# ------------------------------------------------------------------ #
+# Mixed precision (FX graph mode)                                     #
+# fc1 and out stay float32; branches/soma/fc2 quantized to int8      #
+# ------------------------------------------------------------------ #
+
+def compress_model_mixed(model, calibration_data, backend="fbgemm"):
+    from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
+    import torch.ao.quantization as tq
+
+    model_copy = copy.deepcopy(model).cpu().eval()
+    qconfig_mapping = (
+        tq.QConfigMapping()
+        .set_global(tq.get_default_qconfig(backend))
+        .set_module_name("fc1", None)
+        .set_module_name("out", None)
+    )
+    X_cal = calibration_data[0].cpu()
+    prepared = prepare_fx(model_copy, qconfig_mapping, (X_cal[:1],))
+    with torch.no_grad():
+        prepared(X_cal)
+    return convert_fx(prepared)
+
+
+def mixed_model_size_bytes(model):
+    """Quantized layers: int8; unquantized layers (fc1, out): float32."""
+    total = 0
+    for _, mod in model.named_modules():
+        if hasattr(mod, "weight") and callable(mod.weight):
+            try:
+                total += mod.weight().int_repr().nelement()
+                if mod.bias() is not None:
+                    total += mod.bias().nelement() * 4
+            except (AttributeError, RuntimeError):
+                pass
+        elif isinstance(mod, torch.nn.Linear):
+            total += mod.weight.nelement() * 4
+            if mod.bias is not None:
+                total += mod.bias.nelement() * 4
+    return total
+
+
 def dynamic_model_size_bytes(model):
     """True compressed size: int8 weight bytes + float32 bias bytes per Linear layer.
 

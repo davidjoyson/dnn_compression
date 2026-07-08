@@ -50,6 +50,18 @@ def generate_plots(results):
         dyn = _acc("accuracy_compressed_dynamic", "std_compressed_dynamic")
         if not math.isnan(dyn[0]):
             methods["Dynamic (int8)"] = dyn
+        sta = _acc("accuracy_compressed_static", "std_compressed_static")
+        if not math.isnan(sta[0]):
+            methods["Static (int8)"] = sta
+        pch = _acc("accuracy_compressed_perchan", "std_compressed_perchan")
+        if not math.isnan(pch[0]):
+            methods["Per-channel (int8)"] = pch
+        qat = _acc("accuracy_compressed_qat", "std_compressed_qat")
+        if not math.isnan(qat[0]):
+            methods["QAT (int8)"] = qat
+        mix = _acc("accuracy_compressed_mixed", "std_compressed_mixed")
+        if not math.isnan(mix[0]):
+            methods["Mixed precision"] = mix
         mlp = _acc("accuracy_mlp_baseline", "std_mlp_baseline")
         if not math.isnan(mlp[0]):
             methods["MLP Baseline"] = mlp
@@ -71,6 +83,18 @@ def generate_plots(results):
         f1_dyn = _acc("f1_compressed_dynamic", "std_f1_compressed_dynamic")
         if not math.isnan(f1_dyn[0]):
             f1_methods["Dynamic (int8)"] = f1_dyn
+        f1_sta = _acc("f1_compressed_static", "std_f1_compressed_static")
+        if not math.isnan(f1_sta[0]):
+            f1_methods["Static (int8)"] = f1_sta
+        f1_pch = _acc("f1_compressed_perchan", "std_f1_compressed_perchan")
+        if not math.isnan(f1_pch[0]):
+            f1_methods["Per-channel (int8)"] = f1_pch
+        f1_qat = _acc("f1_compressed_qat", "std_f1_compressed_qat")
+        if not math.isnan(f1_qat[0]):
+            f1_methods["QAT (int8)"] = f1_qat
+        f1_mix = _acc("f1_compressed_mixed", "std_f1_compressed_mixed")
+        if not math.isnan(f1_mix[0]):
+            f1_methods["Mixed precision"] = f1_mix
         f1_mlp = _acc("f1_mlp_baseline", "std_f1_mlp_baseline")
         if not math.isnan(f1_mlp[0]):
             f1_methods["MLP Baseline"] = f1_mlp
@@ -94,6 +118,18 @@ def generate_plots(results):
             _dyn = r.get("size_compressed_dynamic")
             if _dyn:
                 _sizes["Dynamic (int8)"] = _dyn
+            _sta = r.get("size_compressed_static")
+            if _sta:
+                _sizes["Static (int8)"] = _sta
+            _pch = r.get("size_compressed_perchan")
+            if _pch:
+                _sizes["Per-channel (int8)"] = _pch
+            _qat = r.get("size_compressed_qat")
+            if _qat:
+                _sizes["QAT (int8)"] = _qat
+            _mix = r.get("size_compressed_mixed")
+            if _mix:
+                _sizes["Mixed precision"] = _mix
             plot_compression(
                 _sizes,
                 title=f"{name} Model Size",
