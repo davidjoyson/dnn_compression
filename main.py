@@ -28,7 +28,7 @@ from src.reporting import (
 # Defaults                                                            #
 # ------------------------------------------------------------------ #
 
-SEEDS  = (42, 0, 7)
+SEEDS  = (42, 0, 7, 1, 2, 3, 4, 5, 6, 8)
 EPOCHS = 50
 
 ALL_EXPERIMENTS = ["har", "ecg", "eeg", "hapt", "ablation", "component"]

@@ -80,5 +80,7 @@ def store_simple(results, timings, name, out, elapsed):
         "inference_time_dynamic_ms":      out.get("inference_time_dynamic_ms"),
         "inference_time_mlp_ms":          out.get("inference_time_mlp_ms"),
         "edge_profile":                   out.get("edge_profile"),
+        "ci_95":                          out.get("ci_95", {}),
+        "tost":                           out.get("tost", {}),
     }
     timings[name] = elapsed

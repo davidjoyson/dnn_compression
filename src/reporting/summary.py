@@ -61,6 +61,14 @@ def save_metrics_csv(results, run_dir):
                                                    r.get("size_mlp_compressed",   float("nan"))),
             "time_seconds":                round(r.get("time_seconds", 0.0), 2),
             "num_seeds":                   r.get("num_seeds", 1),
+            "ci_95_uncompressed":          round(r.get("ci_95", {}).get("uncompressed", 0.0), 6),
+            "ci_95_compressed":            round(r.get("ci_95", {}).get("compressed",   0.0), 6),
+            "tost_snowflake_equiv":        r.get("tost", {}).get("compressed",        {}).get("equivalent"),
+            "tost_snowflake_mean_diff":    r.get("tost", {}).get("compressed",        {}).get("mean_diff"),
+            "tost_snowflake_ci_low":       r.get("tost", {}).get("compressed",        {}).get("ci_low"),
+            "tost_snowflake_ci_high":      r.get("tost", {}).get("compressed",        {}).get("ci_high"),
+            "tost_snowflake_p_low":        r.get("tost", {}).get("compressed",        {}).get("p_low"),
+            "tost_snowflake_p_high":       r.get("tost", {}).get("compressed",        {}).get("p_high"),
         })
 
     if not rows:
@@ -119,6 +127,10 @@ def print_summary(results, timings):
         std_u   = to_float(r.get("std_uncompressed",  0.0))
         std_c   = to_float(r.get("std_compressed",    0.0))
         std_mlp = to_float(r.get("std_mlp_baseline",  0.0))
+        _ci = r.get("ci_95", {})
+        ci_u   = to_float(_ci.get("uncompressed",       0.0))
+        ci_c   = to_float(_ci.get("compressed",         0.0))
+        ci_mlp = to_float(_ci.get("mlp_baseline",       0.0))
         acc_mlp_c     = to_float(r.get("accuracy_mlp_compressed", float("nan")))
         std_mlp_c     = to_float(r.get("std_mlp_compressed",      0.0))
         acc_global   = to_float(r.get("accuracy_compressed_global",  float("nan")))
@@ -143,19 +155,25 @@ def print_summary(results, timings):
         n_seeds   = r.get("num_seeds", 1)
         seed_note = f" (mean over {n_seeds} seeds)" if n_seeds > 1 else ""
 
+        def _ci_str(ci_val):
+            return f"  95% CI: +/-{ci_val:.4f}" if ci_val > 0 else ""
+
         print(f"{name}{seed_note}:")
-        print(f"  Uncompressed Acc : {acc_u:.4f} +/- {std_u:.4f}")
-        print(f"  Snowflake (int8) : {acc_c:.4f} +/- {std_c:.4f}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed','?')} bytes]")
+        print(f"  Uncompressed Acc : {acc_u:.4f} +/- {std_u:.4f}{_ci_str(ci_u)}")
+        print(f"  Snowflake (int8) : {acc_c:.4f} +/- {std_c:.4f}{_ci_str(ci_c)}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed','?')} bytes]")
         if not math.isnan(acc_global):
-            print(f"  Global int8      : {acc_global:.4f} +/- {std_global:.4f}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_global','?')} bytes]")
+            ci_gl = to_float(_ci.get("compressed_global", 0.0))
+            print(f"  Global int8      : {acc_global:.4f} +/- {std_global:.4f}{_ci_str(ci_gl)}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_global','?')} bytes]")
         if not math.isnan(acc_dynamic):
-            print(f"  Dynamic (int8)   : {acc_dynamic:.4f} +/- {std_dynamic:.4f}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_dynamic','?')} bytes]")
+            ci_dy = to_float(_ci.get("compressed_dynamic", 0.0))
+            print(f"  Dynamic (int8)   : {acc_dynamic:.4f} +/- {std_dynamic:.4f}{_ci_str(ci_dy)}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_dynamic','?')} bytes]")
         if not math.isnan(acc_global) and not math.isnan(acc_dynamic):
             print(f"  -- Compression delta: Snowflake(8b)={acc_c - acc_u:+.4f} | Global(8b)={acc_global - acc_u:+.4f} | Dynamic(8b)={acc_dynamic - acc_u:+.4f}")
         if not math.isnan(acc_mlp):
-            print(f"  MLP Baseline Acc : {acc_mlp:.4f} +/- {std_mlp:.4f}")
+            print(f"  MLP Baseline Acc : {acc_mlp:.4f} +/- {std_mlp:.4f}{_ci_str(ci_mlp)}")
         if not math.isnan(acc_mlp_c):
-            print(f"  MLP Compressed   : {acc_mlp_c:.4f} +/- {std_mlp_c:.4f}")
+            ci_mlp_c = to_float(_ci.get("mlp_compressed", 0.0))
+            print(f"  MLP Compressed   : {acc_mlp_c:.4f} +/- {std_mlp_c:.4f}{_ci_str(ci_mlp_c)}")
         if not math.isnan(f1_u):
             print(f"  Uncompressed F1  : {f1_u:.4f}")
             print(f"  Snowflake F1     : {f1_c:.4f}  (delta={f1_c - f1_u:+.4f})")
@@ -177,26 +195,26 @@ def print_summary(results, timings):
         if r.get("size_mlp_uncompressed") is not None:
             print(f"  MLP Size         : {r['size_mlp_uncompressed']} -> {r['size_mlp_compressed']} bytes")
 
-        ps = r.get("per_seed")
-        if ps and len(ps.get("acc_uncompressed", [])) >= 2:
-            try:
-                from scipy import stats as _stats
-                a_u  = ps["acc_uncompressed"]
-                a_sf = ps["acc_compressed"]
-                a_gl = ps.get("acc_compressed_global", [])
-                a_dy = ps.get("acc_compressed_dynamic", [])
-                def _ttest(a, b):
-                    t, p = _stats.ttest_rel(a, b)
-                    sig = "*" if p < 0.05 else "n.s."
-                    return f"t={t:+.3f}, p={p:.4f} ({sig})"
-                print(f"  Significance (paired t-test, n={len(a_u)}):")
-                print(f"    Snowflake vs Uncompressed : {_ttest(a_sf, a_u)}")
-                if a_gl:
-                    print(f"    Global    vs Uncompressed : {_ttest(a_gl, a_u)}")
-                if a_dy:
-                    print(f"    Dynamic   vs Uncompressed : {_ttest(a_dy, a_u)}")
-            except ImportError:
-                pass
+        tost_r = r.get("tost", {})
+        if tost_r:
+            _TOST_LABELS = [
+                ("compressed",         "Snowflake"),
+                ("compressed_global",  "Global   "),
+                ("compressed_dynamic", "Dynamic  "),
+                ("compressed_static",  "Static   "),
+                ("compressed_perchan", "Per-chan "),
+                ("compressed_qat",     "QAT      "),
+                ("compressed_mixed",   "Mixed    "),
+            ]
+            rows = [(lbl, tost_r[k]) for k, lbl in _TOST_LABELS
+                    if k in tost_r and tost_r[k].get("equivalent") is not None]
+            if rows:
+                print(f"  Equivalence (TOST, e=2%, n={n_seeds}):")
+                for lbl, t in rows:
+                    verdict = "EQUIV    " if t["equivalent"] else "NOT EQUIV"
+                    print(f"    {lbl}: {verdict}  diff={t['mean_diff']:+.4f}"
+                          f"  CI=[{t['ci_low']:+.4f}, {t['ci_high']:+.4f}]"
+                          f"  (p_low={t['p_low']:.4f}, p_high={t['p_high']:.4f})")
 
         ep = r.get("edge_profile")
         if ep:
@@ -246,18 +264,29 @@ def save_per_seed_csv(results, run_dir):
             continue
         ps = r["per_seed"]
         n = len(ps["acc_uncompressed"])
+        def _ps(key, i):
+            v = ps.get(key, [None] * n)[i]
+            return round(v, 6) if v is not None else ""
         for i in range(n):
             rows.append({
-                "experiment":             name,
-                "seed_index":             i,
-                "acc_uncompressed":       round(ps["acc_uncompressed"][i], 6),
-                "acc_compressed":         round(ps["acc_compressed"][i], 6),
-                "acc_compressed_global":  round(ps["acc_compressed_global"][i], 6),
-                "acc_compressed_dynamic": round(ps["acc_compressed_dynamic"][i], 6),
-                "f1_uncompressed":        round(ps["f1_uncompressed"][i], 6),
-                "f1_compressed":          round(ps["f1_compressed"][i], 6),
-                "f1_compressed_global":   round(ps["f1_compressed_global"][i], 6),
-                "f1_compressed_dynamic":  round(ps["f1_compressed_dynamic"][i], 6),
+                "experiment":              name,
+                "seed_index":              i,
+                "acc_uncompressed":        _ps("acc_uncompressed", i),
+                "acc_compressed":          _ps("acc_compressed", i),
+                "acc_compressed_global":   _ps("acc_compressed_global", i),
+                "acc_compressed_dynamic":  _ps("acc_compressed_dynamic", i),
+                "acc_compressed_static":   _ps("acc_compressed_static", i),
+                "acc_compressed_perchan":  _ps("acc_compressed_perchan", i),
+                "acc_compressed_qat":      _ps("acc_compressed_qat", i),
+                "acc_compressed_mixed":    _ps("acc_compressed_mixed", i),
+                "f1_uncompressed":         _ps("f1_uncompressed", i),
+                "f1_compressed":           _ps("f1_compressed", i),
+                "f1_compressed_global":    _ps("f1_compressed_global", i),
+                "f1_compressed_dynamic":   _ps("f1_compressed_dynamic", i),
+                "f1_compressed_static":    _ps("f1_compressed_static", i),
+                "f1_compressed_perchan":   _ps("f1_compressed_perchan", i),
+                "f1_compressed_qat":       _ps("f1_compressed_qat", i),
+                "f1_compressed_mixed":     _ps("f1_compressed_mixed", i),
             })
     if not rows:
         return

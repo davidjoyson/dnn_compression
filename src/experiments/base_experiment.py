@@ -25,6 +25,7 @@ from src.compression.compression_pipeline import (
     mixed_model_size_bytes,
 )
 from src.analysis.branch_diversity import compute_branch_diversity
+from src.analysis.tost import ci_95, tost_paired
 
 
 def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_epochs, batch_size=128, model_dir=None, weight_decay=0.0):
@@ -322,6 +323,8 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     # static quant may fail on some seeds; filter None before aggregating
     _mean_safe = lambda lst: float(sum(x for x in lst if x is not None) / max(1, sum(1 for x in lst if x is not None))) if any(x is not None for x in lst) else None
     _std_safe  = lambda lst: float(torch.tensor([x for x in lst if x is not None]).std().item()) if sum(1 for x in lst if x is not None) > 1 else 0.0
+    _ci95      = lambda lst: ci_95(lst)
+    _ci95_safe = lambda lst: ci_95([x for x in lst if x is not None])
 
     return {
         "accuracy": {
@@ -416,4 +419,25 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         "inference_time_static_ms":       inference_times.get("static_ms")   if inference_times else None,
         "inference_time_mlp_ms":          inference_times["mlp_ms"]          if inference_times else None,
         "edge_profile":                   edge_profile,
+        "ci_95": {
+            "uncompressed":       _ci95(acc_u_list),
+            "compressed":         _ci95(acc_c_list),
+            "compressed_global":  _ci95(acc_global_list),
+            "compressed_dynamic": _ci95(acc_dynamic_list),
+            "compressed_static":  _ci95_safe(acc_static_list),
+            "compressed_perchan": _ci95_safe(acc_perchan_list),
+            "compressed_qat":     _ci95_safe(acc_qat_list),
+            "compressed_mixed":   _ci95_safe(acc_mixed_list),
+            "mlp_baseline":       _ci95(acc_mlp_list),
+            "mlp_compressed":     _ci95(acc_mlp_c_list),
+        },
+        "tost": {
+            "compressed":         tost_paired(acc_u_list, acc_c_list),
+            "compressed_global":  tost_paired(acc_u_list, acc_global_list),
+            "compressed_dynamic": tost_paired(acc_u_list, acc_dynamic_list),
+            "compressed_static":  tost_paired(acc_u_list, acc_static_list),
+            "compressed_perchan": tost_paired(acc_u_list, acc_perchan_list),
+            "compressed_qat":     tost_paired(acc_u_list, acc_qat_list),
+            "compressed_mixed":   tost_paired(acc_u_list, acc_mixed_list),
+        },
     }
