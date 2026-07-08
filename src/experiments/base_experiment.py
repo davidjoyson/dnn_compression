@@ -23,8 +23,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     Shared experiment loop for all tabular datasets.
 
     get_data: callable(seed) -> (X_raw_tr, y_raw_tr, X_raw_test, y_raw_test) as NumPy arrays.
-      - For seed-aware loaders (HAR): pass lambda seed: load_har(seed=seed)
-      - For fixed loaders (ECG/EEG/HAPT): pre-load once and pass lambda seed: cached_data
+      - For fixed loaders (HAR/ECG/EEG/HAPT): pass lambda seed: load_dataset()
     """
     acc_u_list, acc_c_list, acc_mlp_list, acc_mlp_c_list = [], [], [], []
     acc_global_list, acc_dynamic_list = [], []

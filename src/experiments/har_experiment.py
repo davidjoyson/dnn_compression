@@ -6,7 +6,7 @@ _CLASS_NAMES = ["Walking", "Walking Upstairs", "Walking Downstairs", "Sitting", 
 
 def run_har(epochs=50, seeds=(42,), fine_tune_epochs=3, model_dir=None):
     return run_experiment(
-        get_data=lambda seed: load_har(seed=seed),
+        get_data=lambda seed: load_har(),
         num_classes=6,
         class_names=_CLASS_NAMES,
         epochs=epochs,
