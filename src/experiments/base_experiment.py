@@ -18,6 +18,7 @@ from src.compression.compression_pipeline import (
     compress_model_static,
     static_model_size_bytes,
 )
+from src.analysis.branch_diversity import compute_branch_diversity
 
 
 def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_epochs, batch_size=128, model_dir=None, weight_decay=0.0):
@@ -43,6 +44,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     inference_times = None
     curve_data = None
     n_params = None
+    branch_diversity = None
 
     for seed in seeds:
         X_raw_tr, y_raw_tr, X_raw_test, y_raw_test = get_data(seed)
@@ -98,6 +100,11 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         if weight_dist is None:
             weights_after = np.concatenate([p.data.cpu().numpy().ravel() for p in model_u.parameters()])
             weight_dist = {"before": weights_before, "after": weights_after}
+
+        if branch_diversity is None:
+            model_float = copy.deepcopy(model_u)
+            model_float.load_state_dict(original_state)
+            branch_diversity = compute_branch_diversity(model_float, model_u, X_train)
         acc_c_list.append(evaluate(model_u, X_test, y_test, num_classes=num_classes))
         if model_dir and acc_c_list[-1] > best_acc_c:
             best_acc_c = acc_c_list[-1]
@@ -318,6 +325,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         "conf_matrix":      {"uncompressed": conf_matrix_u, "compressed": conf_matrix_c},
         "class_names":      class_names,
         "weight_dist":      weight_dist,
+        "branch_diversity": branch_diversity,
         "curve_data":       curve_data,
         "per_seed": {
             "acc_uncompressed":       acc_u_list,

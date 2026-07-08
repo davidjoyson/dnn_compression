@@ -14,6 +14,7 @@ from src.plots.plot_val_accuracy import plot_val_accuracy
 from src.plots.plot_component_ablation import plot_component_ablation
 from src.plots.plot_compression_delta import plot_compression_delta
 from src.plots.plot_edge_profile import plot_edge_profile
+from src.plots.plot_branch_diversity import plot_branch_diversity
 
 
 def generate_plots(results):
@@ -202,6 +203,14 @@ def generate_plots(results):
                 print(f"  {name} compression delta saved")
             except Exception as e:
                 print(f"  Warning: Could not plot compression delta for {name}: {e}")
+
+        if r.get("branch_diversity") is not None:
+            try:
+                plot_branch_diversity(r["branch_diversity"], title=name,
+                                      filename=f"{slug}_branch_diversity.png")
+                print(f"  {name} branch diversity saved")
+            except Exception as e:
+                print(f"  Warning: Could not plot branch diversity for {name}: {e}")
 
         if r.get("weight_dist") is not None:
             try:
