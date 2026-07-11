@@ -2,7 +2,7 @@
 
 A research project exploring lossless compression of biologically-inspired dendritic neural networks on real-world tabular/time-series classification tasks.
 
-**Core finding:** Per-layer int8 quantization (Snowflake) achieves **~4× compression with zero accuracy loss** across 4 datasets, while global and dynamic int8 quantization degrade accuracy — validating that per-layer calibration is essential for small models.
+**Core finding:** Per-layer int8 quantization (Snowflake) achieves **~4× compression with zero accuracy loss** across 4 datasets. TOST equivalence testing (n=10 seeds, ±2% margin) confirms **27/28 method–dataset pairs are statistically equivalent** — the sole exception being dynamic int8 on EEG (−2.4%).
 
 ---
 
@@ -36,28 +36,32 @@ Each branch operates in parallel on the same FC1 activations, learning different
 
 ### Compression Pipeline
 
-Three methods evaluated head-to-head:
+Seven methods evaluated head-to-head:
 
 | Method | Description | Size ratio |
 |---|---|---|
 | **Snowflake (int8)** | Per-layer int8 — one scale per layer group (weight + bias) | **4×** |
 | Global int8 | Single global scale across all parameters | 4× |
 | Dynamic int8 | PyTorch `quantize_dynamic` on Linear layers | ~4× |
+| Static (int8) | Per-tensor static calibration via `prepare`/`convert` | ~4× |
+| Per-channel (int8) | One scale per output neuron row; biases stay float32 | ~4× |
+| QAT (int8) | Quantization-aware training via `prepare_qat_fx`/`convert_fx` | ~4× |
+| Mixed precision | Inner layers int8, first and last layers float32 | ~0.9× |
 
-All methods optionally followed by 3 epochs of post-quantization fine-tuning. Compared against a param-matched MLP baseline.
+All methods optionally followed by 3 epochs of post-quantization fine-tuning. Compared against a param-matched MLP baseline (2 layers: FC+ReLU → output).
 
 ---
 
-## Results — 50 epochs, 3 seeds (42, 0, 7)
+## Results — 50 epochs, 10 seeds
 
-| Dataset | Classes | Uncompressed | Snowflake (4×) | Delta | Significant? |
+| Dataset | Classes | Uncompressed | Snowflake (4×) | Delta | TOST (n=10) |
 |---|---|---|---|---|---|
-| UCI HAR | 6 | 97.94% ±0.32% | 97.93% ±0.34% | -0.02% | n.s. |
-| ECG Heartbeat | 5 | 96.08% ±0.43% | **96.60% ±0.42%** | **+0.53%** | n.s. |
-| EEG Brainwave | 3 | 97.66% ±0.23% | 97.58% ±0.14% | -0.08% | n.s. |
-| HAPT | 12 | 92.45% ±0.52% | **92.80% ±0.62%** | **+0.35%** | n.s. |
+| UCI HAR | 6 | 94.12% ±0.48% | 94.16% ±0.45% | +0.04% | EQUIV |
+| ECG Heartbeat | 5 | 96.23% ±0.92% | **96.77% ±0.46%** | **+0.54%** | EQUIV |
+| EEG Brainwave | 3 | 97.85% ±0.18% | 97.78% ±0.23% | -0.07% | EQUIV |
+| HAPT | 12 | 92.22% ±0.57% | **92.50% ±0.47%** | **+0.28%** | EQUIV |
 
-Snowflake matches or beats uncompressed on all 4 datasets. No statistically significant degradation (paired t-test, n=3). Dynamic int8 on EEG is the only significant failure across all methods: -2.42%, p=0.001.
+Snowflake matches or beats uncompressed on all 4 datasets. TOST equivalence testing (±2% margin) confirms 27/28 method–dataset pairs are equivalent. The only failure is dynamic int8 on EEG (−2.41%, NOT EQUIV) — a known issue with dynamic quantization on larger models.
 
 ---
 
@@ -95,6 +99,9 @@ dnn_compression/
 │   │   ├── eeg_experiment.py
 │   │   ├── hapt_experiment.py
 │   │   └── ablation_study.py            # Architecture + component ablations
+│   │
+│   ├── analysis/
+│   │   └── tost.py                      # TOST equivalence testing + 95% CI helpers
 │   │
 │   ├── reporting/
 │   │   ├── summary.py                   # Print summary, significance, edge profile
@@ -164,6 +171,12 @@ python main.py --exp ablation component
 
 # Print model architecture and parameter counts
 python main.py --arch
+
+# Regenerate plots from a previous run without re-training
+python main.py --replot outputs/run_20260708_182443_har_ecg_eeg_hapt_ablation_component_epo50
+
+# Merge results from multiple runs and replot together
+python main.py --replot outputs/run_A outputs/run_B
 ```
 
 ### CLI flags
@@ -172,9 +185,10 @@ python main.py --arch
 |---|---|---|
 | `--exp` | `har ecg eeg hapt` | Experiments to run |
 | `--epochs` | `50` | Training epochs per experiment |
-| `--seeds` | `42 0 7` | Random seeds (results averaged) |
+| `--seeds` | `42 0 7 1 2 3 4 5 6 8` | Random seeds (results averaged) |
 | `--fine-tune-epochs` | `3` | Post-quantization fine-tuning epochs |
 | `--arch` | — | Print model architectures and exit |
+| `--replot` | — | Load `results.pkl` from one or more run dirs and regenerate plots without re-training |
 
 ---
 
@@ -184,9 +198,10 @@ Each run creates a timestamped directory under `outputs/`:
 
 - `run.log` — full stdout/stderr mirror
 - `metrics.csv` — per-experiment summary stats
-- `per_seed_metrics.csv` — per-seed breakdown
-- `summary.txt` — human-readable summary with significance and edge profile
-- `figures/` — all plots (accuracy, confusion matrix, ROC/PR, compression delta, edge profile, etc.)
+- `per_seed_metrics.csv` — per-seed breakdown for all 8 quantization methods
+- `summary.txt` — human-readable summary with TOST equivalence table and edge profile
+- `results.pkl` — pickled `{results, timings}` dict for use with `--replot`
+- `figures/` — all plots (accuracy, confusion matrix, ROC/PR, compression delta, Pareto frontier, cross-dataset summary, edge profile, per-class F1, etc.)
 - `models/{dataset}/` — best model weights per dataset:
   - `dendritic_uncompressed.pt` — float32 state dict (best seed)
   - `dendritic_snowflake.pt` — compressed quantized dict (best seed)

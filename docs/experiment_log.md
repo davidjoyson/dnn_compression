@@ -337,6 +337,11 @@ Dynamic int8 fails on EEG (-2.42%) — the large fc1 layer (163k params, wide ac
 | `5399d2c` | 2026-05-31 | Remove tqdm from training loop; TF parity check on ECG (matching results, TF files deleted) |
 | `55328fb` | 2026-06-09 | Add ROC/PR curves, compression delta, and paired t-test significance reporting |
 | `3c5b2da` | 2026-06-09 | Best-model saving per dataset, edge-AI profile plot, ablation/component out of defaults |
+| `948d8f8` | 2026-07-08 | Add per-channel, QAT, and mixed-precision quantization baselines (point 9) |
+| `a56b1fd` | 2026-07-08 | Add 95% CI, TOST equivalence testing, and 10-seed default (point 3) |
+| `3d5ff21` | 2026-07-08 | Fix print_summary to display accuracy for all 8 quantization methods |
+| `13ef16b` | 2026-07-08 | Update experiment log with 2026-07-08 session results |
+| `12d77e9` | 2026-07-09 | Add --replot flag and results.pkl saving to decouple plotting from training |
 
 ---
 
@@ -726,6 +731,66 @@ All 7 **EQUIV**.
 5. **Per-channel near-identical to uncompressed** — diff ≤ 0.02% on all datasets; extremely precise quantization
 6. **Dynamic quantization least reliable** — only method to fail TOST; not recommended for this architecture
 7. **CI tightened ~3×** vs 3-seed runs (e.g. EEG uncompressed: was ±0.9% estimate, now ±0.13%)
+
+---
+
+## 2026-07-09 — Full Combined Run: --replot Flag, results.pkl, Cross-Dataset Plots + Ablation
+
+**Commits:** `3d5ff21` Fix print_summary to display accuracy for all 8 quantization methods · `13ef16b` Update experiment log with 2026-07-08 session results · `12d77e9` Add --replot flag and results.pkl saving to decouple plotting from training
+
+### Summary
+Fixed summary output for the 4 new quantization methods (Static, Per-channel, QAT, Mixed). Decoupled plotting from training via `--replot` flag and `results.pkl` saving. Ran the first full combined 10-seed run including all 4 datasets plus both ablation studies in a single invocation — generating the first cross-dataset plots (Pareto frontier, edge profile, cross-dataset summary) and a single `results.pkl` covering all experiments.
+
+### Infrastructure Changes
+
+**`3d5ff21` — Fix print_summary for all 8 methods**
+- Summary was printing accuracy lines only for Uncompressed/Snowflake/Global/Dynamic — Static, Per-channel, QAT, Mixed were missing
+- Added variable extraction and print blocks for all 4 new methods
+
+**`12d77e9` — --replot + results.pkl**
+- `main.py`: saves `results.pkl` (pickled `{results, timings}` dict) at end of every normal run
+- `--replot RUN_DIR [...]`: loads and merges `results.pkl` from one or more run dirs, regenerates all plots + summary + CSVs without re-training
+- Motivation: per-dataset runs (one `--exp har`, one `--exp ecg`, etc.) each have only 1 dataset in results, so cross-dataset plots (`plot_pareto`, `plot_cross_dataset_summary`, etc.) were skipped. `--replot` lets you merge them afterward without re-running
+
+### Full Combined Run — 50 epochs, 10 seeds
+*Output: `outputs/run_20260708_182443_har_ecg_eeg_hapt_ablation_component_epo50`*
+
+Ran `python main.py --exp har ecg eeg hapt ablation component` — all 6 experiments in one invocation.
+
+| Experiment | Time |
+|---|---|
+| UCI HAR | 492s (8.2 min) |
+| ECG Heartbeat | 15,398s (4.3 hrs) |
+| EEG Brainwave | 115s (1.9 min) |
+| HAPT | 966s (16.1 min) |
+| Ablation Study | 3,279s (54.7 min) |
+| Component Ablation | 1,088s (18.1 min) |
+| **Total** | **~5h 39m** |
+
+Cross-dataset plots generated for the first time (Pareto frontier, edge profile, cross-dataset summary, inference time comparison).
+
+### Ablation Study — ECG, 50 epochs, 1 seed
+
+Architecture size sweep (confirms accuracy scales with capacity):
+
+| Config | Branches | Uncomp | Snowflake | Δ |
+|---|---|---|---|---|
+| h1=16, h2=8, br=2 | 2 | 87.99% | 87.18% | −0.81% |
+| h1=32, h2=16, br=4 | 4 | 92.66% | **92.82%** | +0.16% |
+| h1=64, h2=32, br=6 | 6 | 96.01% | **96.76%** | +0.75% |
+
+Snowflake regulariser benefit grows with model size. Consistent with 2026-07-05 results.
+
+### Component Ablation — ECG, 50 epochs, 1 seed
+
+| Condition | Description | Accuracy |
+|---|---|---|
+| `none` | Uncompressed baseline | 90.91% |
+| `quant_only` | Snowflake int8, no topology sharing | **91.80%** (+0.89%) |
+| `topo_only` | Branch weights shared, float32 | **18.23% ≈ random** |
+| `both` | Topology sharing + quantization | 18.44% ≈ random |
+
+Confirms prior finding: topology sharing destroys branch diversity → model collapses to chance (5-class random = 20%). Quantization alone slightly improves over baseline. Results stable across sessions.
 
 ---
 
