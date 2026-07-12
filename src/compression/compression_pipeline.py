@@ -274,6 +274,61 @@ def mixed_model_size_bytes(model):
     return total
 
 
+# ------------------------------------------------------------------ #
+# Int4 quantization (per-layer, 4-bit range [-7, 7])                 #
+# Same topology as Snowflake; stored as int8, packed size 0.5 B/elem #
+# ------------------------------------------------------------------ #
+
+def _quantize_int4(model):
+    groups = defaultdict(list)
+    for name, p in model.named_parameters():
+        groups[_layer_name(name)].append(p.data)
+    scales = {}
+    for layer, tensors in groups.items():
+        max_val = max(t.abs().max().item() for t in tensors)
+        scales[layer] = torch.tensor(max_val / 7.0 if max_val > 0 else 1.0, dtype=torch.float32)
+    compressed = {}
+    with torch.no_grad():
+        for name, p in model.named_parameters():
+            scale = scales[_layer_name(name)]
+            q = torch.round(p.data / scale).clamp(-7, 7).to(torch.int8)
+            compressed[name] = {"q": q.cpu(), "scale": scale.cpu()}
+    return compressed
+
+
+def compress_model_int4(model, fine_tune_data=None, fine_tune_epochs=3, fine_tune_lr=1e-4):
+    """Per-layer int4 quantization (~8× compression); fine-tunes if data provided."""
+    compressed = _quantize_int4(model)
+    if fine_tune_data is not None:
+        X, y = fine_tune_data
+        num_classes = getattr(model, "num_classes", 1)
+        decompress_model_int4(compressed, model)
+        train(model, X, y, epochs=fine_tune_epochs, lr=fine_tune_lr, num_classes=num_classes)
+        compressed = _quantize_int4(model)
+    return compressed
+
+
+def decompress_model_int4(compressed, model):
+    with torch.no_grad():
+        for name, p in model.named_parameters():
+            entry = compressed[name]
+            p.data = (entry["q"].float() * entry["scale"]).to(dtype=p.dtype, device=p.device)
+    return model
+
+
+def int4_size_bytes(compressed):
+    """Two int4 values packed per byte → 0.5 bytes/element + 4 bytes/scale."""
+    total = 0.0
+    seen_layers = set()
+    for name, entry in compressed.items():
+        total += entry["q"].nelement() * 0.5
+        layer = _layer_name(name)
+        if layer not in seen_layers:
+            total += 4
+            seen_layers.add(layer)
+    return int(total)
+
+
 def dynamic_model_size_bytes(model):
     """True compressed size: int8 weight bytes + float32 bias bytes per Linear layer.
 

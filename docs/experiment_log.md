@@ -794,6 +794,69 @@ Confirms prior finding: topology sharing destroys branch diversity → model col
 
 ---
 
+## 2026-07-12 — Int4 Quantization: Standalone Run Across All 4 Datasets
+
+### Summary
+Implemented Snowflake int4 (4-bit) quantization and ran a standalone benchmark (`run_int4.py`) across all 4 datasets. Int4 achieves 8× compression vs float32 (2× better than int8) but accuracy degrades in proportion to task complexity. Viable on simple datasets, fails on complex ones.
+
+### Implementation
+
+**`src/compression/compression_pipeline.py`** — 4 new functions:
+- `_quantize_int4(model)` — per-layer scale = max_val/7.0, clamp to [-7, 7], store as `torch.int8`
+- `compress_model_int4(model, fine_tune_data, fine_tune_epochs)` — quantize with optional fine-tuning
+- `decompress_model_int4(compressed, model)` — dequantize: `q.float() * scale`
+- `int4_size_bytes(compressed)` — counts 0.5 bytes/element (theoretical packed int4) + 4 bytes/layer for scale
+
+PyTorch has no native int4 dtype; values stored as int8 using range [-7, 7] instead of [-127, 127]. Size counted at 0.5 bytes/element to reflect theoretical packing (2 int4 per byte).
+
+**`run_int4.py`** (standalone, not wired into main experiment loop) — trains once per seed, runs int8 reference + int4, prints per-seed rows and final summary with TOST.
+
+Reporting files (plots, summary, utils) wired to show int4 when data is present, but `base_experiment.py` left unchanged so int4 does not run in the main loop.
+
+### Results — 3 seeds (42, 0, 7), 50 epochs, fine-tune 3 epochs
+
+#### UCI HAR (6-class) — 10 seeds, 12.1 min
+
+| Method | Accuracy | 95% CI | TOST (ε=2%) | Size |
+|---|---|---|---|---|
+| Uncompressed | 94.55% ±0.43% | — | — | 164536B |
+| Snowflake int8 | 94.65% ±0.32% | — | **EQUIV** diff=+0.10% | 41182B (4.0×) |
+| Snowflake int4 | 93.43% ±0.66% | — | **EQUIV** diff=−1.11% | 20615B (8.0×) |
+
+#### ECG Heartbeat (5-class) — 3 seeds, 74.2 min
+
+| Method | Accuracy | TOST (ε=2%) | Size |
+|---|---|---|---|
+| Uncompressed | 96.13% ±1.15% | — | 68660B |
+| Snowflake int8 | 97.36% ±0.34% | **EQUIV** diff=+1.23% | 17213B (4.0×) |
+| Snowflake int4 | 87.39% ±6.12% | **NOT EQUIV** diff=−8.74% | 8630B (8.0×) |
+
+#### EEG Brainwave (3-class) — 3 seeds, 0.5 min
+
+| Method | Accuracy | TOST (ε=2%) | Size |
+|---|---|---|---|
+| Uncompressed | 97.89% ±0.58% | — | 672812B |
+| Snowflake int8 | 97.81% ±0.34% | **EQUIV** diff=−0.08% | 168251B (4.0×) |
+| Snowflake int4 | 97.81% ±0.89% | **EQUIV** diff=−0.08% | 84149B (8.0×) |
+
+#### HAPT (12-class) — 3 seeds, 5.6 min
+
+| Method | Accuracy | TOST (ε=2%) | Size |
+|---|---|---|---|
+| Uncompressed | 92.88% ±2.24% | — | 165328B |
+| Snowflake int8 | 93.05% ±2.07% | **EQUIV** diff=+0.17% | 41380B (4.0×) |
+| Snowflake int4 | 88.74% ±1.62% | **NOT EQUIV** diff=−4.14% | 20714B (8.0×) |
+
+### Key Findings
+
+1. **Int4 viability is task-complexity-dependent** — passes TOST on EEG (3-class, −0.08%) and HAR (6-class, −1.11%), fails on HAPT (12-class, −4.14%) and ECG (5-class fine-grained, −8.74%)
+2. **ECG is the worst case** — 8.74pp drop with enormous variance (±6.12%), CI=[-14.01%, -3.46%]. Heartbeat classification requires fine-grained float precision that 4-bit cannot represent
+3. **EEG is the best case** — virtually zero degradation (−0.08pp) at 8× compression; well-separated 3-class clusters tolerate aggressive quantization
+4. **Int8 remains the reliable choice** — EQUIV on all 4 datasets; int4 only viable as optional aggressive compression on simple problems
+5. **Conclusion: int4 not recommended as a general method** — inconsistent across datasets and fails to meet the ε=2% equivalence threshold on 2/4 datasets
+
+---
+
 ## Next Steps
 
 - [x] ~~Commit today's session work~~ — done in `2177bd0`

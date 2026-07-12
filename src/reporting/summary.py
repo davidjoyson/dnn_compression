@@ -145,6 +145,8 @@ def print_summary(results, timings):
         std_qat      = to_float(r.get("std_compressed_qat",          0.0))
         acc_mixed    = to_float(r.get("accuracy_compressed_mixed",   float("nan")))
         std_mixed    = to_float(r.get("std_compressed_mixed",        0.0))
+        acc_int4     = to_float(r.get("accuracy_compressed_int4",   float("nan")))
+        std_int4     = to_float(r.get("std_compressed_int4",        0.0))
         f1_u      = to_float(r.get("f1_uncompressed",       float("nan")))
         f1_c      = to_float(r.get("f1_compressed",         float("nan")))
         f1_global = to_float(r.get("f1_compressed_global",  float("nan")))
@@ -187,6 +189,9 @@ def print_summary(results, timings):
         if not math.isnan(acc_mixed):
             ci_mx = to_float(_ci.get("compressed_mixed", 0.0))
             print(f"  Mixed precision  : {acc_mixed:.4f} +/- {std_mixed:.4f}{_ci_str(ci_mx)}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_mixed','?')} bytes]")
+        if not math.isnan(acc_int4):
+            ci_i4 = to_float(_ci.get("compressed_int4", 0.0))
+            print(f"  Snowflake (int4) : {acc_int4:.4f} +/- {std_int4:.4f}{_ci_str(ci_i4)}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_int4','?')} bytes]")
         if not math.isnan(acc_global) and not math.isnan(acc_dynamic):
             print(f"  -- Compression delta: Snowflake(8b)={acc_c - acc_u:+.4f} | Global(8b)={acc_global - acc_u:+.4f} | Dynamic(8b)={acc_dynamic - acc_u:+.4f}")
         if not math.isnan(acc_mlp):
@@ -225,6 +230,7 @@ def print_summary(results, timings):
                 ("compressed_perchan", "Per-chan "),
                 ("compressed_qat",     "QAT      "),
                 ("compressed_mixed",   "Mixed    "),
+                ("compressed_int4",    "Int4     "),
             ]
             rows = [(lbl, tost_r[k]) for k, lbl in _TOST_LABELS
                     if k in tost_r and tost_r[k].get("equivalent") is not None]
@@ -299,6 +305,7 @@ def save_per_seed_csv(results, run_dir):
                 "acc_compressed_perchan":  _ps("acc_compressed_perchan", i),
                 "acc_compressed_qat":      _ps("acc_compressed_qat", i),
                 "acc_compressed_mixed":    _ps("acc_compressed_mixed", i),
+                "acc_compressed_int4":     _ps("acc_compressed_int4", i),
                 "f1_uncompressed":         _ps("f1_uncompressed", i),
                 "f1_compressed":           _ps("f1_compressed", i),
                 "f1_compressed_global":    _ps("f1_compressed_global", i),
@@ -307,6 +314,7 @@ def save_per_seed_csv(results, run_dir):
                 "f1_compressed_perchan":   _ps("f1_compressed_perchan", i),
                 "f1_compressed_qat":       _ps("f1_compressed_qat", i),
                 "f1_compressed_mixed":     _ps("f1_compressed_mixed", i),
+                "f1_compressed_int4":      _ps("f1_compressed_int4", i),
             })
     if not rows:
         return

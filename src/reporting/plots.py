@@ -62,6 +62,9 @@ def generate_plots(results):
         mix = _acc("accuracy_compressed_mixed", "std_compressed_mixed")
         if not math.isnan(mix[0]):
             methods["Mixed precision"] = mix
+        i4 = _acc("accuracy_compressed_int4", "std_compressed_int4")
+        if not math.isnan(i4[0]):
+            methods["Snowflake (int4)"] = i4
         mlp = _acc("accuracy_mlp_baseline", "std_mlp_baseline")
         if not math.isnan(mlp[0]):
             methods["MLP Baseline"] = mlp
@@ -95,6 +98,9 @@ def generate_plots(results):
         f1_mix = _acc("f1_compressed_mixed", "std_f1_compressed_mixed")
         if not math.isnan(f1_mix[0]):
             f1_methods["Mixed precision"] = f1_mix
+        f1_i4 = _acc("f1_compressed_int4", "std_f1_compressed_int4")
+        if not math.isnan(f1_i4[0]):
+            f1_methods["Snowflake (int4)"] = f1_i4
         f1_mlp = _acc("f1_mlp_baseline", "std_f1_mlp_baseline")
         if not math.isnan(f1_mlp[0]):
             f1_methods["MLP Baseline"] = f1_mlp
@@ -130,6 +136,9 @@ def generate_plots(results):
             _mix = r.get("size_compressed_mixed")
             if _mix:
                 _sizes["Mixed precision"] = _mix
+            _i4 = r.get("size_compressed_int4")
+            if _i4:
+                _sizes["Snowflake (int4)"] = _i4
             plot_compression(
                 _sizes,
                 title=f"{name} Model Size",
