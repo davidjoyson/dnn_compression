@@ -111,7 +111,9 @@ def main():
     parser.add_argument("--warmup",     type=int, default=50)
     parser.add_argument("--skip-qat",   action="store_true",
                         help="Skip QAT (trains for --qat-epochs, slow on Pi).")
-    parser.add_argument("--qat-epochs", type=int, default=5)
+    parser.add_argument("--qat-only",   action="store_true",
+                        help="Run QAT method only, skip all others.")
+    parser.add_argument("--qat-epochs", type=int, default=2)
     parser.add_argument("--output", default=None,
                         help="CSV file to append results to (default: results_<dataset>.csv).")
     args = parser.parse_args()
@@ -180,49 +182,50 @@ def _run(args):
     bench("Float32 (baseline)", m_f32, m_f32.size_bytes())
     f32_size = m_f32.size_bytes()
 
-    # ── 2. Snowflake int8 (per-layer) ──────────────────────────────────────
-    path = os.path.join(model_dir, "dendritic_snowflake.pt")
-    c8 = torch.load(path, map_location="cpu") if os.path.exists(path) \
-         else compress_model(fresh())
-    m_i8 = fresh()
-    decompress_model(c8, m_i8)
-    bench("Snowflake int8 (per-layer)", m_i8, compressed_size_bytes(c8))
+    if not args.qat_only:
+        # ── 2. Snowflake int8 (per-layer) ──────────────────────────────────
+        path = os.path.join(model_dir, "dendritic_snowflake.pt")
+        c8 = torch.load(path, map_location="cpu") if os.path.exists(path) \
+             else compress_model(fresh())
+        m_i8 = fresh()
+        decompress_model(c8, m_i8)
+        bench("Snowflake int8 (per-layer)", m_i8, compressed_size_bytes(c8))
 
-    # ── 3. Global int8 ─────────────────────────────────────────────────────
-    c_g = compress_model_global(fresh())
-    m_g = fresh()
-    decompress_model(c_g, m_g)
-    bench("Global int8", m_g, global_size_bytes(c_g))
+        # ── 3. Global int8 ─────────────────────────────────────────────────
+        c_g = compress_model_global(fresh())
+        m_g = fresh()
+        decompress_model(c_g, m_g)
+        bench("Global int8", m_g, global_size_bytes(c_g))
 
-    # ── 4. Per-channel int8 ────────────────────────────────────────────────
-    c_pc = compress_model_per_channel(fresh())
-    m_pc = fresh()
-    decompress_model_per_channel(c_pc, m_pc)
-    bench("Per-channel int8", m_pc, per_channel_size_bytes(c_pc))
+        # ── 4. Per-channel int8 ────────────────────────────────────────────
+        c_pc = compress_model_per_channel(fresh())
+        m_pc = fresh()
+        decompress_model_per_channel(c_pc, m_pc)
+        bench("Per-channel int8", m_pc, per_channel_size_bytes(c_pc))
 
-    # ── 5. Snowflake int4 (per-layer) ──────────────────────────────────────
-    c_i4 = compress_model_int4(fresh())
-    m_i4 = fresh()
-    decompress_model_int4(c_i4, m_i4)
-    bench("Snowflake int4 (per-layer)", m_i4, int4_size_bytes(c_i4))
+        # ── 5. Snowflake int4 (per-layer) ──────────────────────────────────
+        c_i4 = compress_model_int4(fresh())
+        m_i4 = fresh()
+        decompress_model_int4(c_i4, m_i4)
+        bench("Snowflake int4 (per-layer)", m_i4, int4_size_bytes(c_i4))
 
-    # ── 6. Dynamic int8 (qnnpack) ──────────────────────────────────────────
-    m_dyn = compress_model_dynamic(fresh())
-    bench("Dynamic int8 (qnnpack)", m_dyn, dynamic_model_size_bytes(m_dyn))
+        # ── 6. Dynamic int8 (qnnpack) ──────────────────────────────────────
+        m_dyn = compress_model_dynamic(fresh())
+        bench("Dynamic int8 (qnnpack)", m_dyn, dynamic_model_size_bytes(m_dyn))
 
-    # ── 7. Static W+A (FX graph) ───────────────────────────────────────────
-    try:
-        m_st = compress_model_static(fresh(), (X_tr, y_tr), backend=BACKEND)
-        bench("Static W+A int8 (FX)", m_st, static_model_size_bytes(m_st))
-    except Exception as e:
-        skip("Static W+A int8 (FX)", str(e)[:72])
+        # ── 7. Static W+A (FX graph) ───────────────────────────────────────
+        try:
+            m_st = compress_model_static(fresh(), (X_tr, y_tr), backend=BACKEND)
+            bench("Static W+A int8 (FX)", m_st, static_model_size_bytes(m_st))
+        except Exception as e:
+            skip("Static W+A int8 (FX)", str(e)[:72])
 
-    # ── 8. Mixed precision (FX graph) ──────────────────────────────────────
-    try:
-        m_mx = compress_model_mixed(fresh(), (X_tr, y_tr), backend=BACKEND)
-        bench("Mixed precision (FX)", m_mx, mixed_model_size_bytes(m_mx))
-    except Exception as e:
-        skip("Mixed precision (FX)", str(e)[:72])
+        # ── 8. Mixed precision (FX graph) ──────────────────────────────────
+        try:
+            m_mx = compress_model_mixed(fresh(), (X_tr, y_tr), backend=BACKEND)
+            bench("Mixed precision (FX)", m_mx, mixed_model_size_bytes(m_mx))
+        except Exception as e:
+            skip("Mixed precision (FX)", str(e)[:72])
 
     # ── 9. QAT (FX graph) ──────────────────────────────────────────────────
     if args.skip_qat:

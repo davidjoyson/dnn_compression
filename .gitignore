@@ -1,5 +1,9 @@
 # Data files
 /data/
+/pi_data/
+/benchmark_pi_output/
+
+# CSV results (outputs/ is already ignored)
 *.csv
 *.xlsx
 *.xls
