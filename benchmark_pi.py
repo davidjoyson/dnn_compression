@@ -234,7 +234,7 @@ def _run(args):
         qat_path = os.path.join(model_dir, "dendritic_qat.pt")
         try:
             if os.path.exists(qat_path):
-                m_qat = torch.load(qat_path, map_location="cpu")
+                m_qat = torch.load(qat_path, map_location="cpu", weights_only=False)
             else:
                 m_qat = compress_model_qat(fresh(), (X_tr, y_tr),
                                             epochs=args.qat_epochs,
