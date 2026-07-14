@@ -150,18 +150,19 @@ def _run(args):
         return m
 
     def evaluate(model_infer):
+        # always evaluate on full test set, regardless of --batch-size
         model_infer.eval()
         with torch.no_grad():
-            logits = model_infer(X)
+            logits = model_infer(X_all)
         preds = logits.argmax(dim=1)
-        acc = (preds == y).float().mean().item()
+        acc = (preds == y_all).float().mean().item()
         # macro F1
-        classes = y.unique()
+        classes = y_all.unique()
         f1s = []
         for c in classes:
-            tp = ((preds == c) & (y == c)).sum().item()
-            fp = ((preds == c) & (y != c)).sum().item()
-            fn = ((preds != c) & (y == c)).sum().item()
+            tp = ((preds == c) & (y_all == c)).sum().item()
+            fp = ((preds == c) & (y_all != c)).sum().item()
+            fn = ((preds != c) & (y_all == c)).sum().item()
             p = tp / (tp + fp) if (tp + fp) else 0.0
             r = tp / (tp + fn) if (tp + fn) else 0.0
             f1s.append(2 * p * r / (p + r) if (p + r) else 0.0)
