@@ -170,11 +170,13 @@ def _run(args):
     def bench(name, model_infer, size_bytes):
         lat, std, tput = run_benchmark(model_infer, X, args.warmup, args.runs)
         acc, f1 = evaluate(model_infer)
-        rows.append((name, lat, std, tput, size_bytes, acc, f1))
+        mem = mem_rss_mb()
+        rows.append((name, lat, std, tput, size_bytes, acc, f1, mem))
         print(f"  ok  {name}")
 
     def skip(name, reason):
-        rows.append((name, float("nan"), float("nan"), float("nan"), 0, float("nan"), float("nan")))
+        nan = float("nan")
+        rows.append((name, nan, nan, nan, 0, nan, nan, nan))
         print(f"  --  {name}  [{reason}]")
 
     # ── 1. Float32 ─────────────────────────────────────────────────────────
@@ -246,15 +248,15 @@ def _run(args):
     # ── Print table ─────────────────────────────────────────────────────────
     f32_lat = rows[0][1]
 
-    W = 98
+    W = 107
     print(f"\n{'='*W}")
     print(f"  Dataset: {args.dataset.upper()}  |  batch={args.batch_size}  |  "
           f"n={args.runs}  |  backend={BACKEND}")
     print(f"{'='*W}")
     print(f"{'Method':<30} {'Latency':>9} {'+-std':>7} {'Throughput':>12} "
-          f"{'Size':>9} {'Speedup':>8} {'Compress':>8} {'Acc':>6} {'F1':>6}")
+          f"{'Size':>9} {'Speedup':>8} {'Compress':>8} {'Acc':>6} {'F1':>6} {'RSS':>7}")
     print(f"{'-'*W}")
-    for name, lat, std, tput, size, acc, f1 in rows:
+    for name, lat, std, tput, size, acc, f1, mem in rows:
         if lat != lat:  # nan = failed/skipped
             print(f"{name:<30} {'N/A':>9}")
             continue
@@ -262,8 +264,9 @@ def _run(args):
         compress = f"{f32_size / size:.1f}x" if size else "n/a"
         acc_s = f"{acc*100:.1f}%" if acc == acc else "n/a"
         f1_s  = f"{f1*100:.1f}%" if f1 == f1 else "n/a"
+        mem_s = f"{mem:.0f}MB" if mem == mem else "n/a"
         print(f"{name:<30} {lat:>7.3f}ms {std:>5.3f}ms {tput:>10.0f}/s "
-              f"{size:>7}B {speedup:>7.2f}x {compress:>8} {acc_s:>6} {f1_s:>6}")
+              f"{size:>7}B {speedup:>7.2f}x {compress:>8} {acc_s:>6} {f1_s:>6} {mem_s:>7}")
     print(f"{'='*W}\n")
 
     # ── Save CSV ─────────────────────────────────────────────────────────────
@@ -274,12 +277,12 @@ def _run(args):
     with open(csv_path, "a", newline="") as f:
         w = csv.writer(f)
         if write_header:
-            w.writerow(["dataset", "backend", "method", "latency_ms", "std_ms",
-                        "throughput", "size_bytes", "speedup", "compression", "acc", "f1"])
-        for name, lat, std, tput, size, acc, f1 in rows:
+            w.writerow(["dataset", "backend", "batch", "method", "latency_ms", "std_ms",
+                        "throughput", "size_bytes", "speedup", "compression", "acc", "f1", "rss_mb"])
+        for name, lat, std, tput, size, acc, f1, mem in rows:
             speedup  = f32_lat / lat if lat == lat else ""
             compress = round(f32_size / size, 2) if size else ""
-            w.writerow([args.dataset, BACKEND, name,
+            w.writerow([args.dataset, BACKEND, args.batch_size, name,
                         round(lat, 4) if lat == lat else "",
                         round(std, 4) if std == std else "",
                         round(tput, 1) if tput == tput else "",
@@ -287,7 +290,8 @@ def _run(args):
                         round(speedup, 4) if speedup != "" else "",
                         compress,
                         round(acc, 4) if acc == acc else "",
-                        round(f1, 4) if f1 == f1 else ""])
+                        round(f1, 4) if f1 == f1 else "",
+                        round(mem, 1) if mem == mem else ""])
     print(f"Results saved to {csv_path}")
 
 
