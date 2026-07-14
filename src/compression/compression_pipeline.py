@@ -238,6 +238,33 @@ def compress_model_qat(model, train_data, epochs=10, lr=1e-4, num_classes=1, bac
 # fc1 and out stay float32; branches/soma/fc2 quantized to int8      #
 # ------------------------------------------------------------------ #
 
+def compress_model_snowflake_static(model, calibration_data, backend="fbgemm"):
+    """
+    Snowflake weight calibration (symmetric abs-max/127, per-layer)
+    + static activation quantization → true INT8 inference via qnnpack.
+
+    Isolates whether Snowflake's symmetric per-layer weight scale
+    gives different accuracy vs PyTorch's default asymmetric observer.
+    """
+    from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
+    import torch.ao.quantization as tq
+    from torch.ao.quantization.observer import MinMaxObserver
+
+    snowflake_qconfig = tq.QConfig(
+        activation=MinMaxObserver.with_args(dtype=torch.quint8,
+                                            qscheme=torch.per_tensor_affine),
+        weight=MinMaxObserver.with_args(dtype=torch.qint8,
+                                        qscheme=torch.per_tensor_symmetric),
+    )
+    model_copy = copy.deepcopy(model).cpu().eval()
+    qconfig_mapping = tq.QConfigMapping().set_global(snowflake_qconfig)
+    X_cal = calibration_data[0].cpu()
+    prepared = prepare_fx(model_copy, qconfig_mapping, (X_cal[:1],))
+    with torch.no_grad():
+        prepared(X_cal)
+    return convert_fx(prepared)
+
+
 def compress_model_mixed(model, calibration_data, backend="fbgemm"):
     from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
     import torch.ao.quantization as tq

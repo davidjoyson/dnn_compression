@@ -38,6 +38,7 @@ from src.compression.compression_pipeline import (
     compress_model_static, static_model_size_bytes,
     compress_model_mixed, mixed_model_size_bytes,
     compress_model_qat,
+    compress_model_snowflake_static,
 )
 from src.loaders.load_har  import load_har
 from src.loaders.load_ecg  import load_ecg
@@ -223,14 +224,21 @@ def _run(args):
         except Exception as e:
             skip("Static W+A int8 (FX)", str(e)[:72])
 
-        # ── 8. Mixed precision (FX graph) ──────────────────────────────────
+        # ── 8. Snowflake+Static (Snowflake weight scales + INT8 activations) ─
+        try:
+            m_sws = compress_model_snowflake_static(fresh(), (X_tr, y_tr), backend=BACKEND)
+            bench("Snowflake+Static int8", m_sws, static_model_size_bytes(m_sws))
+        except Exception as e:
+            skip("Snowflake+Static int8", str(e)[:72])
+
+        # ── 9. Mixed precision (FX graph) ──────────────────────────────────
         try:
             m_mx = compress_model_mixed(fresh(), (X_tr, y_tr), backend=BACKEND)
             bench("Mixed precision (FX)", m_mx, mixed_model_size_bytes(m_mx))
         except Exception as e:
             skip("Mixed precision (FX)", str(e)[:72])
 
-    # ── 9. QAT (FX graph) ──────────────────────────────────────────────────
+    # ── 10. QAT (FX graph) ─────────────────────────────────────────────────
     if args.skip_qat:
         skip("QAT int8 (FX)", "--skip-qat")
     else:
