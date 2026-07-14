@@ -231,10 +231,14 @@ def _run(args):
     if args.skip_qat:
         skip("QAT int8 (FX)", "--skip-qat")
     else:
+        qat_path = os.path.join(model_dir, "dendritic_qat.pt")
         try:
-            m_qat = compress_model_qat(fresh(), (X_tr, y_tr),
-                                        epochs=args.qat_epochs,
-                                        num_classes=num_classes, backend=BACKEND)
+            if os.path.exists(qat_path):
+                m_qat = torch.load(qat_path, map_location="cpu")
+            else:
+                m_qat = compress_model_qat(fresh(), (X_tr, y_tr),
+                                            epochs=args.qat_epochs,
+                                            num_classes=num_classes, backend=BACKEND)
             bench("QAT int8 (FX)", m_qat, static_model_size_bytes(m_qat))
         except Exception as e:
             skip("QAT int8 (FX)", str(e)[:72])

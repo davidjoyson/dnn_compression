@@ -41,6 +41,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     best_acc_u, best_state_u = -1, None
     best_acc_c, best_compressed_c = -1, None
     best_acc_mlp, best_state_mlp = -1, None
+    best_acc_qat, best_model_qat = -1, None
     f1_u_list, f1_c_list, f1_global_list, f1_dynamic_list, f1_static_list, f1_mlp_list, f1_mlp_c_list = [], [], [], [], [], [], []
     f1_perchan_list, f1_qat_list, f1_mixed_list = [], [], []
     conf_matrix_u, conf_matrix_c = None, None
@@ -174,8 +175,12 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         try:
             model_qat = compress_model_qat(model_u, train_data=(X_train, y_train),
                                            epochs=fine_tune_epochs, num_classes=num_classes)
-            acc_qat_list.append(evaluate(model_qat, X_test, y_test, num_classes=num_classes, device="cpu"))
+            acc_qat = evaluate(model_qat, X_test, y_test, num_classes=num_classes, device="cpu")
+            acc_qat_list.append(acc_qat)
             f1_qat_list.append(f1_eval(model_qat, X_test, y_test, num_classes=num_classes, device="cpu"))
+            if model_dir and acc_qat > best_acc_qat:
+                best_acc_qat = acc_qat
+                best_model_qat = model_qat
         except Exception as e:
             print(f"[warn] QAT failed: {e}")
             acc_qat_list.append(None)
@@ -282,6 +287,8 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             torch.save(best_compressed_c, os.path.join(model_dir, "dendritic_snowflake.pt"))
         if best_state_mlp is not None:
             torch.save(best_state_mlp, os.path.join(model_dir, "mlp.pt"))
+        if best_model_qat is not None:
+            torch.save(best_model_qat, os.path.join(model_dir, "dendritic_qat.pt"))
 
     _n_test = inference_times.get("n_test", 1) if inference_times else 1
 
