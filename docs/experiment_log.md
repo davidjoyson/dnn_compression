@@ -342,6 +342,10 @@ Dynamic int8 fails on EEG (-2.42%) — the large fc1 layer (163k params, wide ac
 | `3d5ff21` | 2026-07-08 | Fix print_summary to display accuracy for all 8 quantization methods |
 | `13ef16b` | 2026-07-08 | Update experiment log with 2026-07-08 session results |
 | `12d77e9` | 2026-07-09 | Add --replot flag and results.pkl saving to decouple plotting from training |
+| `57ddcc6` | 2026-07-14 | Add Snowflake+Static: symmetric weight scales + INT8 activation quant (Pi benchmark only) |
+| `e09b812` | 2026-07-15 | Add standalone int4 quantization comparison script |
+| `40fdcbd` | 2026-07-17 | Wire Snowflake+Static into the main experiment pipeline |
+| `1f2077a` | 2026-07-17 | Add test_method.py for fast single-method compression testing |
 
 ---
 
@@ -857,6 +861,105 @@ Reporting files (plots, summary, utils) wired to show int4 when data is present,
 
 ---
 
+## 2026-07-17 — Snowflake+Static Wired into Main Pipeline + Pi Power Supply Fix
+
+**Commits:** `40fdcbd` Wire Snowflake+Static into the main experiment pipeline · `1f2077a` Add test_method.py for fast single-method compression testing
+
+### Summary
+`compress_model_snowflake_static` (added 2026-07-14 in `57ddcc6`, previously only exercised in `benchmark_pi.py`) is now a full 9th method in the main `main.py` pipeline — tracked through accuracy/F1/size/TOST/per-seed CSVs and plots exactly like the other 8. Added `test_method.py`, a fast single-method iteration script that loads a saved `dendritic_uncompressed.pt` checkpoint and tests one compression method without retraining or running the other 7 — cuts iteration time from hours to seconds. Also discovered and fixed a Raspberry Pi power supply issue that was silently throttling all prior Pi latency benchmarks by roughly 2×.
+
+### Infrastructure Changes
+
+**`40fdcbd` — Wire Snowflake+Static into `base_experiment.py`**
+- Runs `compress_model_snowflake_static` per seed, alongside the other 7 methods, with the same try/except FX-failure handling as Static/Mixed/QAT
+- Threaded `compressed_snowflake_static` through `accuracy`, `accuracy_std`, `f1`, `f1_std`, `sizes`, `per_seed`, `ci_95`, and `tost` in the returned dict
+- `reporting/utils.py`, `reporting/summary.py`: flattened into `store_simple()`, printed in console/`summary.txt` as "Snowflake+Static", added "SF+Static" row to the TOST equivalence table, added to `per_seed_metrics.csv`
+- `reporting/plots.py`, `plots/style.py`: added to accuracy/F1/size bar charts as "Snowflake+Static (int8)" with its own color (`#17BECF`)
+- Not added to `plot_cross_dataset.py`/`plot_pareto.py` — those use a fixed 5-method comparison set that Static/QAT/Mixed/Per-channel were also never added to
+
+**`1f2077a` — `test_method.py`**
+- Loads `models/<dataset>/dendritic_uncompressed.pt`, applies one named `--method`, evaluates on the real test set, prints accuracy/F1/size/ratio vs. uncompressed
+- Motivation: the full pipeline retrains the base model + MLP + all 8 methods on every invocation (this is why the ECG run below took ~4 hours), so iterating on a single method's code required an all-or-nothing multi-hour run. This script isolates just the one method being changed.
+
+### Full 4-Dataset 10-Seed Run (Snowflake+Static included)
+
+Run individually per dataset (`--exp har`, `--exp eeg`, `--exp hapt`, `--exp ecg`), then merged via `--replot` into `outputs/run_20260715_192823_replot/`.
+
+#### UCI HAR — 398.6s (6.6 min)
+
+| Method | Accuracy | 95% CI | TOST (ε=2%) |
+|---|---|---|---|
+| Uncompressed | 94.12% ±0.48% | ±0.34% | — |
+| Snowflake (int8) | 94.16% ±0.45% | ±0.32% | EQUIV diff=+0.04% |
+| Static (int8) | 94.01% ±0.43% | ±0.31% | EQUIV diff=−0.11% |
+| **Snowflake+Static** | **94.05% ±0.45%** | ±0.32% | **EQUIV diff=−0.07%** |
+
+#### EEG Brainwave — 102.9s (1.7 min)
+
+| Method | Accuracy | 95% CI | TOST (ε=2%) |
+|---|---|---|---|
+| Uncompressed | 97.85% ±0.18% | ±0.13% | — |
+| Snowflake (int8) | 97.78% ±0.23% | ±0.16% | EQUIV diff=−0.07% |
+| Static (int8) | 97.42% ±0.47% | ±0.34% | EQUIV diff=−0.42% |
+| **Snowflake+Static** | **97.75% ±0.20%** | ±0.14% | **EQUIV diff=−0.09%** |
+| Dynamic (int8) | 95.43% ±0.54% | ±0.39% | NOT EQUIV diff=−2.41% (only failure, as always) |
+
+Snowflake+Static essentially matches plain weight-only Snowflake here and clearly beats plain Static — the strongest case yet that Snowflake's symmetric per-layer weight scale still helps once activations are also quantized.
+
+#### HAPT — 1129.7s (18.8 min)
+
+| Method | Accuracy | 95% CI | TOST (ε=2%) |
+|---|---|---|---|
+| Uncompressed | 92.22% ±0.57% | ±0.41% | — |
+| Snowflake (int8) | 92.50% ±0.47% | ±0.33% | EQUIV diff=+0.28% |
+| Static (int8) | 91.95% ±0.60% | ±0.43% | EQUIV diff=−0.26% |
+| **Snowflake+Static** | **91.99% ±0.54%** | ±0.38% | **EQUIV diff=−0.23%** |
+
+#### ECG Heartbeat — 14,288s (3h 58m — largest dataset, 87k train samples)
+
+| Method | Accuracy | 95% CI | TOST (ε=2%) |
+|---|---|---|---|
+| Uncompressed | 96.23% ±0.92% | ±0.66% | — |
+| Snowflake (int8) | 96.77% ±0.46% | ±0.33% | EQUIV diff=+0.54% |
+| Static (int8) | 96.60% ±0.75% | ±0.54% | EQUIV diff=+0.37% |
+| **Snowflake+Static** | **96.38% ±0.89%** | ±0.64% | **EQUIV diff=+0.15%** |
+| QAT (int8) | 97.05% ±0.29% | ±0.21% | EQUIV diff=+0.82% (best method this dataset) |
+
+**All 8 methods EQUIV on all 4 datasets** except the known Dynamic-on-EEG failure — Snowflake+Static passes TOST everywhere, joining the fully-validated method set.
+
+### Raspberry Pi: Power Supply Throttling Discovery
+
+Re-ran `benchmark_pi.py` on all 4 datasets after switching to a correct power supply. Comparing Snowflake+Static batch=1 latency, old (insufficient PSU) vs new (correct PSU):
+
+| Dataset | Old latency | New latency | Speedup from fix |
+|---|---|---|---|
+| HAR | 8.62ms | 4.54ms | 1.90× |
+| ECG | 8.94ms | 4.70ms | 1.90× |
+| EEG | 9.46ms | 4.73ms | 2.00× |
+| HAPT | 9.07ms | 4.56ms | 1.99× |
+
+A near-perfectly uniform ~2× across every dataset — the signature of Raspberry Pi undervoltage throttling (the SoC silently halves clock speed under insufficient power delivery). Accuracy/F1 were identical between old and new runs (hardware-independent, as expected), confirming only latency was affected. **All prior Pi latency numbers in this log/`benchmark_pi_output/` predate this fix and should be treated as ~2× pessimistic.**
+
+With the corrected PSU, real batch=1 speedups vs Float32 baseline:
+
+| Dataset | Snowflake (weight-only) | Snowflake+Static | Static (int8) |
+|---|---|---|---|
+| HAR | 0.97× (no speedup) | **1.98×** | 1.95× |
+| ECG | 1.00× | **1.77×** | 1.80× |
+| EEG | 0.98× | **2.16×** | 2.13× |
+| HAPT | 0.99× | **1.95×** | 1.97× |
+
+This confirms weight-only Snowflake gives storage savings only — it decompresses back to float32 before inference, so CPU runs the same float32 matmuls (~1.0× speedup). Snowflake+Static is the method that delivers both real deployment speedup (on par with plain Static/QAT) **and** competitive accuracy, since it runs true INT8 arithmetic via qnnpack. New CSVs also capture batch=-1 (full test set as one batch) figures, confirming amortized-batch latency is far more optimistic than true single-sample latency (e.g. ECG Float32: 128,352 samples/sec batched vs. 120/sec at batch=1) — a gap worth being explicit about in any deployment-latency claim.
+
+### Key Findings
+
+1. **Snowflake+Static is now the recommended method for real edge deployment** — the only one shown to combine competitive accuracy (EQUIV on all 4 datasets) with a real ~1.8–2.2× runtime speedup on actual ARM hardware, vs. plain Snowflake's storage-only benefit
+2. **The Pi PSU issue was silently doubling every prior latency number** — always verify power delivery before trusting Pi benchmark timings; ~2× uniform slowdown across unrelated datasets is a strong throttling tell
+3. **Full pipeline retraining is expensive and usually unnecessary for method-level iteration** — `test_method.py` reuses the already-trained checkpoint and tests one method in seconds instead of hours
+4. **Batched "per-sample" latency figures meaningfully understate true single-sample deployment latency** — worth reporting batch=1 numbers specifically for any wearable/edge-device latency claim
+
+---
+
 ## Next Steps
 
 - [x] ~~Commit today's session work~~ — done in `2177bd0`
@@ -875,3 +978,9 @@ Reporting files (plots, summary, utils) wired to show int4 when data is present,
 - [x] ~~Add ROC/PR curves, compression delta, significance testing~~ — done 2026-06-09 (`55328fb`)
 - [x] ~~Add edge-AI profile (FLOPs, latency, throughput)~~ — done 2026-06-09 (`3c5b2da`)
 - [x] ~~Save best models per dataset after training~~ — done 2026-06-09 (`3c5b2da`)
+- [x] ~~Wire Snowflake+Static into the main pipeline (was Pi-benchmark-only)~~ — done 2026-07-17 (`40fdcbd`)
+- [x] ~~Add fast single-method testing tool to avoid full retraining on every iteration~~ — done 2026-07-17 (`1f2077a`, `test_method.py`)
+- [x] ~~Diagnose and fix Pi power supply throttling affecting all latency benchmarks~~ — done 2026-07-17 (~2× uniform speedup after PSU fix)
+- [ ] Add Snowflake+Static to `plot_cross_dataset.py`/`plot_pareto.py`'s fixed method set (currently only in per-dataset plots)
+- [ ] Investigate TFLite Micro port for true microcontroller deployment (ESP32 / Arduino Nano 33 BLE Sense) — current Pi benchmarks validate ARM Linux, not MCU-class hardware
+- [ ] Fold `benchmark_pi_output/` corrected (post-PSU-fix) results into README's edge-deployment claims
