@@ -17,6 +17,7 @@ METHOD_COLORS = {
     "Dynamic (int8)":  "#9467BD",
     "MLP Baseline":    "#D62728",
     "MLP Compressed":  "#8C564B",
+    "Snowflake+Static (int8)": "#17BECF",
 }
 
 

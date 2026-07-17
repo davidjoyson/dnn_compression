@@ -53,6 +53,9 @@ def generate_plots(results):
         sta = _acc("accuracy_compressed_static", "std_compressed_static")
         if not math.isnan(sta[0]):
             methods["Static (int8)"] = sta
+        sfst = _acc("accuracy_compressed_snowflake_static", "std_compressed_snowflake_static")
+        if not math.isnan(sfst[0]):
+            methods["Snowflake+Static (int8)"] = sfst
         pch = _acc("accuracy_compressed_perchan", "std_compressed_perchan")
         if not math.isnan(pch[0]):
             methods["Per-channel (int8)"] = pch
@@ -89,6 +92,9 @@ def generate_plots(results):
         f1_sta = _acc("f1_compressed_static", "std_f1_compressed_static")
         if not math.isnan(f1_sta[0]):
             f1_methods["Static (int8)"] = f1_sta
+        f1_sfst = _acc("f1_compressed_snowflake_static", "std_f1_compressed_snowflake_static")
+        if not math.isnan(f1_sfst[0]):
+            f1_methods["Snowflake+Static (int8)"] = f1_sfst
         f1_pch = _acc("f1_compressed_perchan", "std_f1_compressed_perchan")
         if not math.isnan(f1_pch[0]):
             f1_methods["Per-channel (int8)"] = f1_pch
@@ -127,6 +133,9 @@ def generate_plots(results):
             _sta = r.get("size_compressed_static")
             if _sta:
                 _sizes["Static (int8)"] = _sta
+            _sfst = r.get("size_compressed_snowflake_static")
+            if _sfst:
+                _sizes["Snowflake+Static (int8)"] = _sfst
             _pch = r.get("size_compressed_perchan")
             if _pch:
                 _sizes["Per-channel (int8)"] = _pch

@@ -139,6 +139,8 @@ def print_summary(results, timings):
         std_dynamic  = to_float(r.get("std_compressed_dynamic",      0.0))
         acc_static   = to_float(r.get("accuracy_compressed_static",  float("nan")))
         std_static   = to_float(r.get("std_compressed_static",       0.0))
+        acc_sfstatic = to_float(r.get("accuracy_compressed_snowflake_static", float("nan")))
+        std_sfstatic = to_float(r.get("std_compressed_snowflake_static",      0.0))
         acc_perchan  = to_float(r.get("accuracy_compressed_perchan", float("nan")))
         std_perchan  = to_float(r.get("std_compressed_perchan",      0.0))
         acc_qat      = to_float(r.get("accuracy_compressed_qat",     float("nan")))
@@ -180,6 +182,9 @@ def print_summary(results, timings):
         if not math.isnan(acc_static):
             ci_st = to_float(_ci.get("compressed_static", 0.0))
             print(f"  Static (int8)    : {acc_static:.4f} +/- {std_static:.4f}{_ci_str(ci_st)}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_static','?')} bytes]")
+        if not math.isnan(acc_sfstatic):
+            ci_sfst = to_float(_ci.get("compressed_snowflake_static", 0.0))
+            print(f"  Snowflake+Static : {acc_sfstatic:.4f} +/- {std_sfstatic:.4f}{_ci_str(ci_sfst)}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_snowflake_static','?')} bytes]")
         if not math.isnan(acc_perchan):
             ci_pc = to_float(_ci.get("compressed_perchan", 0.0))
             print(f"  Per-channel      : {acc_perchan:.4f} +/- {std_perchan:.4f}{_ci_str(ci_pc)}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_perchan','?')} bytes]")
@@ -227,6 +232,7 @@ def print_summary(results, timings):
                 ("compressed_global",  "Global   "),
                 ("compressed_dynamic", "Dynamic  "),
                 ("compressed_static",  "Static   "),
+                ("compressed_snowflake_static", "SF+Static"),
                 ("compressed_perchan", "Per-chan "),
                 ("compressed_qat",     "QAT      "),
                 ("compressed_mixed",   "Mixed    "),
@@ -302,6 +308,7 @@ def save_per_seed_csv(results, run_dir):
                 "acc_compressed_global":   _ps("acc_compressed_global", i),
                 "acc_compressed_dynamic":  _ps("acc_compressed_dynamic", i),
                 "acc_compressed_static":   _ps("acc_compressed_static", i),
+                "acc_compressed_snowflake_static": _ps("acc_compressed_snowflake_static", i),
                 "acc_compressed_perchan":  _ps("acc_compressed_perchan", i),
                 "acc_compressed_qat":      _ps("acc_compressed_qat", i),
                 "acc_compressed_mixed":    _ps("acc_compressed_mixed", i),
@@ -311,6 +318,7 @@ def save_per_seed_csv(results, run_dir):
                 "f1_compressed_global":    _ps("f1_compressed_global", i),
                 "f1_compressed_dynamic":   _ps("f1_compressed_dynamic", i),
                 "f1_compressed_static":    _ps("f1_compressed_static", i),
+                "f1_compressed_snowflake_static": _ps("f1_compressed_snowflake_static", i),
                 "f1_compressed_perchan":   _ps("f1_compressed_perchan", i),
                 "f1_compressed_qat":       _ps("f1_compressed_qat", i),
                 "f1_compressed_mixed":     _ps("f1_compressed_mixed", i),
