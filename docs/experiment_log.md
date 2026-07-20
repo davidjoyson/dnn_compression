@@ -1115,6 +1115,39 @@ Originally launched at full 10 seeds; stopped and restarted at 3 seeds (42, 0, 7
 
 ---
 
+## 2026-07-20 — README Edge-Deployment Section + LayerMatchedMLP Pi Benchmark
+
+**Commits:** *(pending)*
+
+### Summary
+Folded the corrected-PSU Pi benchmark numbers into the README (no dedicated edge-deployment section existed before). Also extended `benchmark_pi.py` to support `--model-type layer_matched` and ran it on the real Pi for all 4 datasets — closing the gap where `LayerMatchedMLP` (added 2026-07-18) had accuracy numbers but no real hardware latency.
+
+### README — Edge Deployment section (new)
+
+Added a batch=1 latency table (Float32 / Snowflake / Static / Snowflake+Static) across all 4 datasets, sourced from `benchmark_pi_output/*.csv`. States plainly: Snowflake gives ~1.0× real speedup (weight-only, dequantizes to float32 before compute), Static/Snowflake+Static give genuine 1.8–2.2× speedup (true INT8 arithmetic) — the accuracy tables alone don't surface this distinction. Also documents the thermal test result and the still-open power-measurement gap (explicitly not being pursued — no INA219 hardware).
+
+### `benchmark_pi.py` — `--model-type layer_matched` support
+
+`LayerMatchedMLP` was never benchmarked on real hardware (it postdates the last Pi benchmark session). Added a `make_model(..., model_type)` dispatch and guarded the two spots that unconditionally loaded Dendritic-specific checkpoints (`dendritic_snowflake.pt`, `dendritic_qat.pt`) to only do so for `model_type="dendritic"`. `LayerMatchedMLP` has no saved checkpoint (never trained-and-saved by the main pipeline), so it always runs random-init — fine for latency/size (weight-independent), meaningless for the acc/f1 columns in the output CSV.
+
+Ran on the Pi for all 4 datasets, batch=1, 500 runs (`results_*_layer_matched.csv`):
+
+| Dataset | Dendritic (float32 → SF+Static) | LayerMatchedMLP (float32 → SF+Static) |
+|---|---|---|
+| HAR  | 9.01 ms → 4.54 ms (1.98×) | 3.45 ms → 1.59 ms (2.16×) |
+| ECG  | 8.30 ms → 4.70 ms (1.77×) | 5.24 ms → 1.82 ms (2.89×) |
+| EEG  | 10.20 ms → 4.73 ms (2.16×) | 4.84 ms → 1.97 ms (2.46×) |
+| HAPT | 8.88 ms → 4.56 ms (1.95×) | 3.45 ms → 1.58 ms (2.18×) |
+
+**New finding: `LayerMatchedMLP` is consistently faster than `DendriticNetwork` on real hardware, by more than its 76–98% param-count ratio would explain.** Plausible cause: the 8 parallel branch matmuls are 8 separate small kernel launches instead of one fused dense-layer op — real per-op overhead that raw parameter/FLOP count doesn't capture. Combined with the earlier finding that Dendritic shows no consistent *accuracy* robustness advantage under quantization, this adds a second data point against the branching topology's cost-effectiveness: it's not obviously better on accuracy-under-compression, and it's measurably slower on real hardware than an equal-shape non-branching alternative.
+
+### Key Findings
+
+1. **The branching topology has a real, measurable latency cost on hardware** — not just a hypothetical parameter-efficiency tradeoff. This is new information the accuracy-only comparisons never surfaced.
+2. **README now has real edge-deployment numbers** instead of no dedicated section — closes one of the "fold results into README" backlog items.
+
+---
+
 ## Next Steps
 
 - [x] ~~Commit today's session work~~ — done in `2177bd0`
@@ -1138,7 +1171,7 @@ Originally launched at full 10 seeds; stopped and restarted at 3 seeds (42, 0, 7
 - [x] ~~Diagnose and fix Pi power supply throttling affecting all latency benchmarks~~ — done 2026-07-17 (~2× uniform speedup after PSU fix)
 - [ ] Add Snowflake+Static to `plot_cross_dataset.py`/`plot_pareto.py`'s fixed method set (currently only in per-dataset plots)
 - [ ] Investigate TFLite Micro port for true microcontroller deployment (ESP32 / Arduino Nano 33 BLE Sense) — current Pi benchmarks validate ARM Linux, not MCU-class hardware
-- [ ] Fold `benchmark_pi_output/` corrected (post-PSU-fix) results into README's edge-deployment claims
+- [x] ~~Fold `benchmark_pi_output/` corrected (post-PSU-fix) results into README's edge-deployment claims~~ — done 2026-07-20 (new "Edge Deployment" section)
 - [x] ~~Get SSH access to the Pi and re-run corrected-PSU benchmarks (batch=-1 and batch=1)~~ — done 2026-07-18
 - [x] ~~Run sustained-load thermal test to check for throttling risk~~ — done 2026-07-18 (15 min, no throttling, steady-state 46.2°C)
 - [x] ~~Add per-layer-shape-matched baseline (not just total-param-matched)~~ — done 2026-07-18 (`LayerMatchedMLP`)
@@ -1148,10 +1181,12 @@ Originally launched at full 10 seeds; stopped and restarted at 3 seeds (42, 0, 7
 - [x] ~~Run the new 3-model/8-method baseline comparison at full 10-seed scale on all 4 datasets~~ — done 2026-07-19; **result: no consistent robustness advantage for Dendritic (identical 0.0026 mean accuracy-delta across all 3 models)** — Point 1's core claim not supported as stated
 - [x] ~~Re-run component ablation at multi-seed, multi-dataset~~ — done 2026-07-19 (3 seeds × 4 datasets); nuances the old single-seed "collapses to exact chance" framing
 - [x] ~~Test the "quantization improves accuracy via regularization" claim against an actual regularization baseline~~ — done 2026-07-19 (`run_regularization_ablation`); **not confirmed — contradicted on ECG, where explicit regularization hurts while quantization helps**
-- [ ] **Commit thermal_test.py + output_precision.py + LayerMatchedMLP/ablation/logging changes** (currently uncommitted — large multi-session diff)
+- [x] ~~Commit thermal_test.py + output_precision.py + LayerMatchedMLP/ablation/logging changes~~ — done 2026-07-19 (`d5a70b6`)
+- [x] ~~Benchmark `LayerMatchedMLP` on real Pi hardware~~ — done 2026-07-20; **finding: consistently faster than Dendritic beyond what param-count explains — branching has a real per-op latency cost**
 - [ ] **Fix ECG/EEG data leakage risk** — ECG uses Kaggle's pre-split CSVs (likely per-beat, not per-patient); EEG uses random `train_test_split`, no subject/session grouping. HAR is already correctly subject-split for reference
 - [ ] Add balanced accuracy + per-class precision/recall/specificity (only macro F1 + confusion matrix exist today)
 - [ ] Re-run architecture-size ablation (`run_ablation`, 3 model-size configs) at multi-seed — still 1-seed, ECG-only; component/regularization ablations now fixed but this one wasn't touched
 - [ ] Stop describing quantization as "lossless" in README/framing — TOST equivalence in downstream accuracy is not the same claim as lossless compression
-- [ ] Measure real power/energy draw per inference — needs INA219 (or similar) hardware, not yet acquired; Pi 3 has no built-in power ADC
-- [ ] Write up Point 1's negative robustness result and the regularization-ablation contradiction into the actual paper/report draft — currently only recorded in this log
+- [ ] Write up Point 1's negative robustness result, the regularization-ablation contradiction, and the LayerMatchedMLP latency finding into the actual paper/report draft — currently only recorded in this log
+
+**Explicitly not being pursued:** real power/energy draw per inference (needs INA219 or similar hardware, not acquired — user has decided not to pursue this).

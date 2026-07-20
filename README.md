@@ -65,6 +65,36 @@ Snowflake matches or beats uncompressed on all 4 datasets. TOST equivalence test
 
 ---
 
+## Edge Deployment — Raspberry Pi 3
+
+Real single-sample (batch=1) inference latency on a Raspberry Pi 3 Model B (ARM Cortex-A53, `qnnpack` backend), via SSH (`benchmark_pi.py`). Full results in `benchmark_pi_output/`.
+
+| Dataset | Float32 baseline | Snowflake (int8) | Static W+A (int8) | Snowflake+Static (int8) |
+|---|---|---|---|---|
+| HAR  | 9.01 ms | 9.25 ms (0.97×) | 4.62 ms (**1.95×**) | 4.54 ms (**1.98×**) |
+| ECG  | 8.30 ms | 8.33 ms (1.00×) | 4.61 ms (**1.80×**) | 4.70 ms (**1.77×**) |
+| EEG  | 10.20 ms | 10.38 ms (0.98×) | 4.78 ms (**2.13×**) | 4.73 ms (**2.16×**) |
+| HAPT | 8.88 ms | 9.02 ms (0.99×) | 4.52 ms (**1.97×**) | 4.56 ms (**1.95×**) |
+
+**Snowflake gives no real speedup on hardware (~1.0×)** — it's weight-only quantization, so weights are dequantized back to float32 before every matmul; the storage savings (4×) don't translate to compute savings. **Static and Snowflake+Static run true INT8 arithmetic** and deliver a genuine ~1.8–2.2× latency reduction. This is a meaningful distinction the accuracy-only tables above don't capture: for actual edge latency, "true INT8 arithmetic" methods matter, not just int8 *storage*.
+
+**Thermal:** a 15-minute sustained-load test (`thermal_test.py`, Snowflake+Static on ECG, no active cooling) held **229 inf/s with zero throughput degradation**; temperature reached a steady-state **46.2°C by the 5-minute mark** and stayed flat — comfortably below the ~80°C throttle threshold.
+
+**Not yet measured:** real power/energy draw per inference — the Pi 3 has no built-in power ADC (`vcgencmd pmic_read_adc` is Pi 4/5-only), so this needs external hardware (e.g. INA219) not currently available. Temperature was used as a free thermal-risk proxy instead. These numbers also validate an ARM Linux SBC, not bare-metal microcontroller-class hardware (e.g. TFLite Micro on ESP32) — a different deployment target not yet attempted.
+
+**DendriticNetwork vs. LayerMatchedMLP — real hardware latency (batch=1, Snowflake+Static):**
+
+| Dataset | Dendritic (float32 → SF+Static) | LayerMatchedMLP (float32 → SF+Static) |
+|---|---|---|
+| HAR  | 9.01 ms → 4.54 ms (1.98×) | 3.45 ms → 1.59 ms (2.16×) |
+| ECG  | 8.30 ms → 4.70 ms (1.77×) | 5.24 ms → 1.82 ms (2.89×) |
+| EEG  | 10.20 ms → 4.73 ms (2.16×) | 4.84 ms → 1.97 ms (2.46×) |
+| HAPT | 8.88 ms → 4.56 ms (1.95×) | 3.45 ms → 1.58 ms (2.18×) |
+
+`LayerMatchedMLP` is consistently faster than `DendriticNetwork` on real hardware — by more than its 76–98% param-count ratio would explain. The 8 parallel branch matmuls likely carry real per-op overhead (kernel launch, memory access pattern) beyond what raw parameter/FLOP count captures, since they replace one dense layer with 8 smaller ones. This is a genuine latency cost of the branching topology that the accuracy-only comparisons don't show. (Accuracy/F1 columns in `results_*_layer_matched.csv` are not meaningful — `LayerMatchedMLP` has no saved trained checkpoint, so these runs use random-init weights; latency and size are unaffected by weight values.)
+
+---
+
 ## Project Structure
 
 ```

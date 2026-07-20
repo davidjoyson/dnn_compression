@@ -11,7 +11,7 @@ from src.plots.plot_per_class_f1 import plot_per_class_f1
 from src.plots.plot_weight_dist import plot_weight_distribution
 from src.plots.plot_inference_time import plot_inference_time
 from src.plots.plot_val_accuracy import plot_val_accuracy
-from src.plots.plot_component_ablation import plot_component_ablation
+from src.plots.plot_component_ablation import plot_component_ablation, plot_ablation_combined
 from src.plots.plot_compression_delta import plot_compression_delta
 from src.plots.plot_edge_profile import plot_edge_profile
 from src.plots.plot_branch_diversity import plot_branch_diversity
@@ -163,6 +163,13 @@ def generate_plots(results):
                 print(f"  Component ablation plot saved ({dataset})")
             except Exception as e:
                 print(f"  Warning: Could not plot component ablation ({dataset}): {e}")
+        try:
+            plot_ablation_combined(results["Component Ablation"],
+                                   filename="component_ablation_all.png",
+                                   title="Compression Component Ablation (all datasets)")
+            print("  Component ablation combined plot saved")
+        except Exception as e:
+            print(f"  Warning: Could not plot combined component ablation: {e}")
 
     if "Regularization Ablation" in results and isinstance(results["Regularization Ablation"], dict):
         for dataset, conditions in results["Regularization Ablation"].items():
@@ -173,6 +180,13 @@ def generate_plots(results):
                 print(f"  Regularization ablation plot saved ({dataset})")
             except Exception as e:
                 print(f"  Warning: Could not plot regularization ablation ({dataset}): {e}")
+        try:
+            plot_ablation_combined(results["Regularization Ablation"],
+                                   filename="regularization_ablation_all.png",
+                                   title="Regularization vs. Quantization (all datasets)")
+            print("  Regularization ablation combined plot saved")
+        except Exception as e:
+            print(f"  Warning: Could not plot combined regularization ablation: {e}")
 
     if "Ablation Study" in results and isinstance(results["Ablation Study"], list):
         try:

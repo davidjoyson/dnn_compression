@@ -29,6 +29,7 @@ BACKEND = "qnnpack" if "qnnpack" in _supported else "fbgemm"
 torch.backends.quantized.engine = BACKEND
 
 from src.models.dendritic_network import DendriticNetwork
+from src.models.mlp_baseline import LayerMatchedMLP
 from src.compression.compression_pipeline import (
     compress_model, decompress_model, compressed_size_bytes,
     compress_model_global,
@@ -60,7 +61,10 @@ LOADERS = {
 }
 
 
-def make_model(input_dim, num_classes):
+def make_model(input_dim, num_classes, model_type="dendritic"):
+    if model_type == "layer_matched":
+        return LayerMatchedMLP(input_dim=input_dim, hidden_neurons1=64,
+                               branches=8, hidden_neurons2=32, num_classes=num_classes)
     return DendriticNetwork(input_dim=input_dim, hidden_neurons1=64,
                             hidden_neurons2=32, branches=8,
                             hidden_per_branch=8, num_classes=num_classes)
@@ -115,6 +119,10 @@ def main():
     parser.add_argument("--qat-only",   action="store_true",
                         help="Run QAT method only, skip all others.")
     parser.add_argument("--qat-epochs", type=int, default=2)
+    parser.add_argument("--model-type", choices=["dendritic", "layer_matched"], default="dendritic",
+                        help="Model to benchmark. layer_matched uses random init (no saved "
+                             "checkpoint exists) — latency/size are still valid since they "
+                             "don't depend on weight values; acc/f1 are not meaningful.")
     parser.add_argument("--output", default=None,
                         help="CSV file to append results to (default: results_<dataset>.csv).")
     args = parser.parse_args()
@@ -143,11 +151,15 @@ def _run(args):
     rows = []  # (name, lat_ms, std_ms, throughput, size_bytes, acc, f1)
 
     def fresh():
-        """Return a model with trained weights if model-dir given, else random."""
-        m = make_model(input_dim, num_classes)
-        path = os.path.join(model_dir, "dendritic_uncompressed.pt")
-        if os.path.exists(path):
-            m.load_state_dict(torch.load(path, map_location="cpu"))
+        """Return a model with trained weights if model-dir given, else random.
+        layer_matched has no saved checkpoint (never trained-and-saved by the
+        main pipeline) so it's always random init — fine for latency/size,
+        meaningless for acc/f1."""
+        m = make_model(input_dim, num_classes, args.model_type)
+        if args.model_type == "dendritic":
+            path = os.path.join(model_dir, "dendritic_uncompressed.pt")
+            if os.path.exists(path):
+                m.load_state_dict(torch.load(path, map_location="cpu"))
         return m
 
     def evaluate(model_infer):
@@ -189,7 +201,7 @@ def _run(args):
     if not args.qat_only:
         # ── 2. Snowflake int8 (per-layer) ──────────────────────────────────
         path = os.path.join(model_dir, "dendritic_snowflake.pt")
-        c8 = torch.load(path, map_location="cpu") if os.path.exists(path) \
+        c8 = torch.load(path, map_location="cpu") if args.model_type == "dendritic" and os.path.exists(path) \
              else compress_model(fresh())
         m_i8 = fresh()
         decompress_model(c8, m_i8)
@@ -244,7 +256,7 @@ def _run(args):
     else:
         qat_path = os.path.join(model_dir, "dendritic_qat.pt")
         try:
-            if os.path.exists(qat_path):
+            if args.model_type == "dendritic" and os.path.exists(qat_path):
                 m_qat = torch.load(qat_path, map_location="cpu", weights_only=False)
             else:
                 m_qat = compress_model_qat(fresh(), (X_tr, y_tr),
@@ -259,8 +271,8 @@ def _run(args):
 
     W = 107
     print(f"\n{'='*W}")
-    print(f"  Dataset: {args.dataset.upper()}  |  batch={args.batch_size}  |  "
-          f"n={args.runs}  |  backend={BACKEND}")
+    print(f"  Dataset: {args.dataset.upper()}  |  model={args.model_type}  |  "
+          f"batch={args.batch_size}  |  n={args.runs}  |  backend={BACKEND}")
     print(f"{'='*W}")
     print(f"{'Method':<30} {'Latency':>9} {'+-std':>7} {'Throughput':>12} "
           f"{'Size':>9} {'Speedup':>8} {'Compress':>8} {'Acc':>6} {'F1':>6} {'RSS':>7}")
@@ -280,7 +292,8 @@ def _run(args):
 
     # ── Save CSV ─────────────────────────────────────────────────────────────
     import csv
-    csv_path = args.output or os.path.join("outputs", f"results_{args.dataset}.csv")
+    suffix = "" if args.model_type == "dendritic" else f"_{args.model_type}"
+    csv_path = args.output or os.path.join("outputs", f"results_{args.dataset}{suffix}.csv")
     os.makedirs(os.path.dirname(csv_path), exist_ok=True)
     write_header = not os.path.exists(csv_path)
     with open(csv_path, "a", newline="") as f:
