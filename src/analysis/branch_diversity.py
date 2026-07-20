@@ -44,15 +44,40 @@ def branch_quant_error(model_float, model_quant, X, device="cpu"):
     return [((f - q) ** 2).mean().item() for f, q in zip(float_acts, quant_acts)]
 
 
-def compute_branch_diversity(model_float, model_quant, X, device="cpu"):
+def branch_saturation_rate(model, X_train, X_test, device="cpu"):
     """
-    Compute all three branch diversity metrics.
+    Per-branch fraction of test-time activations falling outside the
+    calibration (training) range. Static/Snowflake+Static/QAT calibrate a
+    fixed activation scale from training data and reuse it at test time —
+    this measures what fraction of real test activations that fixed range
+    would actually clip/saturate. Unlike weight saturation under Snowflake
+    (trivially ~0, since the per-layer scale is defined by the max weight
+    itself), this reflects genuine potential information loss at inference.
+    """
+    train_acts = _capture_branch_acts(model, X_train, device)
+    test_acts = _capture_branch_acts(model, X_test, device)
+    rates = []
+    for tr, te in zip(train_acts, test_acts):
+        lo, hi = tr.min().item(), tr.max().item()
+        rates.append(((te < lo) | (te > hi)).float().mean().item())
+    return rates
+
+
+def compute_branch_diversity(model_float, model_quant, X, device="cpu", X_test=None):
+    """
+    Compute branch diversity metrics.
     model_float: trained float32 DendriticNetwork
     model_quant: same model after decompress_model() (dequantized INT8 weights)
     X: calibration/training data tensor
+    X_test: optional held-out test data — if given, also computes per-branch
+            saturation rate (fraction of test activations outside the range
+            seen in X)
     """
-    return {
+    result = {
         "weight_similarity":      branch_weight_similarity(model_float),
         "activation_correlation": branch_activation_correlation(model_float, X, device),
         "quant_error_per_branch": branch_quant_error(model_float, model_quant, X, device),
     }
+    if X_test is not None:
+        result["saturation_rate_per_branch"] = branch_saturation_rate(model_float, X, X_test, device)
+    return result

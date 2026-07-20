@@ -960,6 +960,161 @@ This confirms weight-only Snowflake gives storage savings only — it decompress
 
 ---
 
+## 2026-07-18 — Professor Feedback Audit + Layer-Matched Baseline + Pi Thermal Test
+
+**Commits:** *(pending — thermal_test.py, base_experiment.py, mlp_baseline.py, reporting/summary.py, reporting/utils.py not yet committed)*
+
+### Summary
+Got real SSH access to the Pi 3 (`david@apollo`) and ran corrected-PSU benchmarks plus a 15-minute sustained-load thermal test. Then went through 10 pieces of professor feedback point by point against the actual codebase (not assumed — verified against source) and closed the two highest-leverage gaps: added `LayerMatchedMLP`, a baseline matched to DendriticNetwork's per-layer shape (not just total param count), and wired both `MLPBaseline` and `LayerMatchedMLP` through all 8 compression methods (previously the MLP baseline only ever got plain Snowflake).
+
+### Raspberry Pi: SSH Access + Full Benchmark Re-run
+
+Set up ed25519 key-based SSH access to the Pi (`david@apollo`, Raspberry Pi 3 Model B, `models/`+`data/` already present from prior manual runs). Ran `benchmark_pi.py` for all 4 datasets at both `--batch-size -1` (30m24s) and `--batch-size 1` (4m45s). Batch=1 Snowflake+Static numbers closely reproduced the earlier corrected-PSU figures (e.g. ECG 4.6995ms → 4.701ms), confirming the power fix is stable, not a one-off.
+
+### Sustained-Load Thermal Test (`thermal_test.py`, new)
+
+Pi 3 has no built-in power ADC (`vcgencmd pmic_read_adc` unsupported — that's Pi 4/5 only), so true energy/power measurement needs external hardware (INA219 recommended, not yet acquired). `vcgencmd measure_temp` works for free, so built a sustained-load test instead: tight single-sample inference loop for a fixed duration, temperature sampled every 3s in a background thread, reusing `benchmark_pi.py`'s model-building blocks.
+
+Ran Snowflake+Static on ECG for 15 minutes (900s): **206,256 inferences, 229.2 inf/s sustained throughout — zero throughput degradation.** Temperature rose from 40.8°C to a **steady-state 46.2°C by the 5-minute mark**, then held flat (±0.5°C) for the remaining 10 minutes — a clean thermal-equilibrium curve, not runaway heating. Comfortably below the Pi's ~80°C throttle threshold, even on a bare board with no active cooling. Confirms sustained real-time inference (e.g. continuous ECG monitoring) doesn't stress this hardware thermally.
+
+### Professor Feedback Audit (10 points, checked against source)
+
+Went through each claim against the actual code rather than assumption:
+
+| # | Point | Status |
+|---|---|---|
+| 1 | True INT8 arithmetic vs weight-only dequant + edge measurement | ⚠️ Partial — Snowflake confirmed weight-only (~1.0x Pi speedup); Static/Snowflake+Static/Dynamic/QAT/Mixed confirmed true INT8 (1.7–2.2x real speedup). Power/energy still unmeasured (no hardware) |
+| 2 | Dendritic robustness vs MLP, total-param **and** per-layer matched | ❌→✅ **Fixed this session** — see below |
+| 3 | 10-seed statistical rigor, CI, TOST equivalence | ✅ Done 2026-07-08 |
+| 4 | "Lossless compression" is a misnomer | ❌ Not fixed — still framed as lossless in places |
+| 5 | Subject/sample-level split — data leakage risk | ❌ Not fixed — HAR is properly subject-split (UCI's official split); **ECG uses Kaggle's pre-split CSVs (known per-beat, not per-patient, split — likely leakage)**; **EEG uses plain `train_test_split(..., random_state=42)`, i.e. random sample-level, no subject/session grouping** |
+| 6 | Macro F1, balanced accuracy, per-class sensitivity/specificity | ⚠️ Partial — macro F1 and confusion matrices exist everywhere; balanced accuracy and per-class precision/recall/specificity do not |
+| 7 | Quantitative proof of branch diversity | ⚠️ Partial — `branch_diversity.py` measures weight cosine similarity, activation correlation, and per-branch quantization MSE. Missing: saturation rate |
+| 8 | Controlled single-variable ablations per claim | ⚠️ Partial — topology-sharing and dynamic-quant-failure claims are well isolated; int4-scales-with-size rests on only 2 data points; ablation studies run at 1 seed vs. the 10 used elsewhere |
+| 9 | MLP + compact architectures under all quantization methods | ❌→✅ **Fixed this session** — see below |
+| 10 | Real edge hardware deployment | ✅ Done — Pi 3 over SSH, full 4-dataset runs, 15-min thermal test. Caveat: ARM Linux SBC, not bare-metal MCU |
+
+### LayerMatchedMLP + Full-Method Baseline Comparison (closes points 2 & 9)
+
+**The gap:** `MLPBaseline` was only ever matched to DendriticNetwork on *total* parameter count (`param_matched_hidden()` solves one algebraic equation for hidden width). For ECG this means MLP's single `fc1` (16,732 params) is bigger on its own than Dendritic's `fc1 + branches` combined (16,192 params) — very different weight-matrix shapes hiding behind an equal total. And MLP was only ever compressed with plain Snowflake — never the other 7 methods — so "Dendritic is more robust to quantization" was untested for 8/9 of the actual claim.
+
+**`LayerMatchedMLP`** (new class, `src/models/mlp_baseline.py`): plain sequential `input→64→8→32→num_classes`, mirroring DendriticNetwork's exact per-stage widths (fc1, branch/soma bottleneck, fc2, out) but with a single dense layer replacing the 8 parallel branches + soma — isolates whether branching *itself* matters, independent of total budget. Necessarily has fewer total params than DendriticNetwork for the same shape (branches+soma is parameter-redundant by design — 8 separate matrices vs. 1) — 76–98% of Dendritic's param count depending on dataset (varies with how much `fc1` dominates).
+
+| Dataset | Dendritic | LayerMatchedMLP | % of Dendritic |
+|---|---|---|---|
+| HAR | 41,134 | 36,974 | 89.9% |
+| ECG | 17,165 | 13,005 | 75.8% |
+| EEG | 168,203 | 164,043 | 97.5% |
+| HAPT | 41,332 | 37,172 | 89.9% |
+
+**`compress_all_methods()`** (new helper, `base_experiment.py`): runs a plain Linear-based model through all 8 compression methods (Snowflake, Global, Dynamic, Static, Snowflake+Static, Per-channel, QAT, Mixed) with the same try/except FX-failure handling used for DendriticNetwork. Called once for `mlp` and once for `lm` (LayerMatchedMLP) per seed, replacing MLP's old single-method block. Results land in a new `method_comparison` section of the results dict, with full TOST equivalence testing (same `tost_paired()` used for Dendritic) — surfaced via a new "Baseline Comparison" table in `print_summary`/`summary.txt`.
+
+Smoke-tested on EEG (2 epochs): 1-seed run confirmed both baselines compute cleanly through all 8 methods in 10s; 2-seed run confirmed TOST verdicts populate correctly (`EQUIV`/`NOT EQUIV` with real diff/CI), matching the exact rigor already applied to Dendritic. LayerMatchedMLP's narrower 8-wide bottleneck predictably underperforms the unconstrained MLP uncompressed (0.8407 vs 0.9391 on the smoke test) — sensible, since it has an information bottleneck DendriticNetwork's soma also has.
+
+**Cost note:** this triples per-seed compute (3 models × 8 methods instead of 1 model × 8 + trivial MLP), so a full 10-seed run — especially ECG, which already took ~4 hours for Dendritic alone — will take substantially longer. Not yet run at full scale.
+
+### Key Findings
+
+1. **Two of the professor's ten points are now fully addressed** (statistical rigor was already done; branching-vs-shape and full-method-comparison gaps closed this session), several others are partially addressed with clearly identified remaining scope, and three are still fully open: data leakage (ECG/EEG), imbalanced-metric reporting (balanced accuracy, per-class breakdown), and the "lossless" terminology
+2. **Data leakage is the most consequential open gap** — if ECG/EEG results are inflated by leakage, every downstream accuracy/TOST claim on those two datasets is suspect regardless of how rigorous the statistics around it are
+3. **The Pi 3 has no built-in power sensing** — real energy-per-inference numbers need external hardware (INA219 recommended) not yet acquired; temperature was used as a free proxy in the meantime and shows no thermal risk at all under sustained load
+
+---
+
+## 2026-07-19 — Output Precision Metric + Full 10-Seed Baseline Run + Ablation Redesign
+
+**Commits:** *(pending — this entry covers all currently-uncommitted changes)*
+
+### Summary
+Closed out the remaining professor-feedback gaps that needed real compute rather than just code: added the "true inference precision" metric (quantized-vs-float32 output divergence, not vs. labels), ran the 3-model/8-method baseline comparison at full 10-seed scale on all 4 datasets, redesigned the component ablation to be multi-dataset/multi-seed instead of ECG-only/1-seed, and added a new regularization ablation to directly test the "quantization improves accuracy via regularization" claim instead of just asserting it by analogy. Also added per-epoch training logs across the board so long background runs are actually observable instead of a silent tqdm bar.
+
+### Output Precision Metric (`src/analysis/output_precision.py`, new)
+
+`output_divergence(model_float, model_quant, X, num_classes)` compares a compressed model's raw output against the float32 reference's output on the same inputs — logit MSE, cosine similarity, KL divergence, prediction-flip-rate. This is distinct from accuracy/F1 (which only compares against ground-truth labels) and from branch-level quantization error (which is per-branch, not whole-model). Wired into `base_experiment.py` for all 8 Dendritic methods; `model_float` snapshot moved earlier in the seed loop (before Snowflake) so it's available to every method, not just Snowflake.
+
+Interesting early result (later confirmed at full scale, see below): the two best-*accuracy* methods (Snowflake, QAT) show the *highest* output divergence from the float32 reference, while Per-channel is bit-identical (cos_sim≈1.0) despite unremarkable accuracy — fine-tuned methods find genuinely different decision functions rather than faithfully approximating the original, even when downstream accuracy looks the same or better.
+
+### Full 10-Seed Run — All 4 Datasets, 3-Model Comparison (`run_20260718_184326_har_ecg_eeg_hapt_epo50`)
+
+Ran the full pipeline (Dendritic + MLPBaseline + LayerMatchedMLP, each × 8 compression methods, 10 seeds) end to end for the first time at proper scale — previously only smoke-tested at 1–2 seeds on EEG.
+
+**Time: ~6h48m total, almost entirely dominated by ECG (~6h08m of it).** HAR 813.6s, ECG 22,069.2s, EEG 174.9s, HAPT 1,429.0s. ECG is ~20× slower per epoch than HAR despite similar model size — larger dataset, more batches per epoch.
+
+| Dataset | Uncompressed Acc | Snowflake (int8) |
+|---|---|---|
+| HAR | 0.9412 ± 0.0048 | 0.9416 ± 0.0045 |
+| ECG | 0.9623 ± 0.0092 | 0.9677 ± 0.0046 |
+| EEG | 0.9785 ± 0.0018 | 0.9778 ± 0.0023 |
+| HAPT | 0.9222 ± 0.0057 | 0.9250 ± 0.0047 |
+
+**Robustness comparison (Point 1's actual claim — Dendritic vs. MLPBaseline vs. LayerMatchedMLP under compression), computed from `method_comparison`:**
+
+Mean |accuracy delta| across all 8 methods, per dataset:
+
+| Dataset | Dendritic | MLP | LayerMatchedMLP |
+|---|---|---|---|
+| HAR | 0.0007 | **0.0004** | 0.0006 |
+| ECG | **0.0036** | 0.0041 | 0.0052 |
+| EEG | 0.0041 | 0.0047 | **0.0034** |
+| HAPT | 0.0020 | **0.0012** | **0.0012** |
+| **Overall mean** | **0.0026** | **0.0026** | **0.0026** |
+
+All three models land at the *exact same* overall mean — no consistent ordering; each "wins" on a different dataset. By worst-case delta (largest single-method drop, usually Dynamic), Dendritic does degrade least on 3 of 4 datasets (loses only to MLP on HAPT), hinting it may specifically resist the worst quantization method better — but every one of these deltas is smaller than the seed-to-seed accuracy std (~0.005–0.01), and no significance test has been run comparing deltas *between* models (only each model vs. its own uncompressed baseline via TOST).
+
+**Conclusion: the data does not support "Dendritic is consistently more robust to quantization than either baseline."** The effect, if real at all, is small, dataset-dependent, and currently indistinguishable from noise. This directly addresses Point 1 by testing the claim rather than assuming it — and the honest answer is negative. Recorded here rather than glossed over.
+
+### Per-Epoch Training Logs (`train.py` + all call sites)
+
+Added `verbose`/`label` params to `train()` — one print line per epoch (loss, val_loss/val_acc if available), flushed immediately. Every `train()` call site across the codebase now passes `verbose=True` with a context label (model name + seed, or fine-tune method name). Motivated by watching the ~7h main run and ~4.5h ablation run with zero visibility into progress beyond a non-flushing tqdm bar. Minor added cost (one print per epoch) is negligible next to actual training time.
+
+### Ablation Redesign — Component Ablation (multi-dataset/multi-seed) + New Regularization Ablation
+
+**The gap (Point 3):** the existing component ablation (`topo_only`/`quant_only`/`both` vs. `none`) was ECG-only and hardcoded to 1 seed (`seeds[:1]`), despite everything else in the codebase using 10-seed rigor. And no ablation existed at all for the "quantization improves accuracy via regularization" claim — it was only ever supported by analogy (quantization happens to slightly improve accuracy, therefore it must be regularizing), never tested against an actual regularization baseline.
+
+**Fixed `_run_component`** (`main.py`): now loops over all 4 datasets with the full seed set and the same DendriticNetwork shape as the main experiments (h1=64, h2=32, branches=8, hidden_per_branch=8), instead of a small ECG-only toy config.
+
+**New `run_regularization_ablation`** (`ablation_study.py`): three conditions per seed — `none` (float32 baseline), `quant_only` (Snowflake-compressed), `reg_only` (retrained from the *same* seed with `weight_decay`, kept float32 — same init + data-shuffle order as `none`, so weight_decay is the only variable that differs). If `reg_only`'s gain over `none` matches `quant_only`'s gain, that supports the regularization-effect claim; if not, it isn't just regularization. Registered as `--exp regularization`.
+
+Also generalized `plot_component_ablation.py` to handle arbitrary condition sets (added `reg_only` label) and updated `summary.py`/`plots.py` to handle the new per-dataset-nested result structure, plus added a one-line `-- dataset: {name} --` banner print per dataset inside both ablation loops (originally missing, made mid-run status checks hard to read).
+
+### Ablation Run — 3 Seeds, All 4 Datasets (`run_20260719_203629_component_regularization_epo50`)
+
+Originally launched at full 10 seeds; stopped and restarted at 3 seeds (42, 0, 7) partway through once the projected ~13–14h remaining time was clear — 3 seeds is enough to catch a real directional effect for these more binary claims, at roughly 1/3 the cost of the 10-seed statistical rigor used for the main equivalence-testing results.
+
+**Time: ~4h28m** (Component Ablation 5,846s / Regularization Ablation 10,232s). ECG dominated both, as with the main run.
+
+**Component Ablation results:**
+
+| Dataset | none | topo_only | quant_only | both | chance level |
+|---|---|---|---|---|---|
+| HAR | 0.940 | 0.269 ± **0.32** | 0.940 | 0.269 | 16.7% |
+| ECG | 0.965 | 0.395 ± 0.21 | 0.967 | 0.402 | 20% |
+| EEG | 0.977 | 0.506 ± 0.12 | 0.977 | 0.506 | 33.3% |
+| HAPT | 0.924 | 0.227 ± **0.24** | 0.924 | 0.230 | 8.3% |
+
+`quant_only` remains essentially free everywhere (matches `none`). `topo_only` collapses accuracy by 50–70 points with enormous seed-to-seed variance (std up to 0.32) — topology sharing without fine-tuning is not a graceful degradation, it's unstable and can be catastrophic.
+
+**This nuances the earlier single-seed ECG conclusion** (2026-05-27 through 2026-07-05 entries: `topo_only` = 18.23%, described as "collapses to chance... **definitively answers** why branch diversity is the core inductive bias"). At 3 seeds the ECG mean is 39.5% ± 21% — well above the old single-seed point and above chance (20%) on average, just with huge variance. The *direction* of the old conclusion holds (topology sharing without fine-tuning is bad), but "collapses to exactly chance, definitively" was an overstatement resting on N=1. It's messier: often above chance, wildly unstable seed-to-seed, not a clean deterministic collapse.
+
+**Regularization Ablation results:**
+
+| Dataset | none | quant_only | reg_only |
+|---|---|---|---|
+| HAR | 0.940 | 0.940 | **0.948** (reg helps *more* than quant) |
+| ECG | 0.965 | 0.967 | **0.927** (reg *hurts*, quant helps) |
+| EEG | 0.977 | 0.977 | 0.976 |
+| HAPT | 0.924 | 0.924 | 0.926 |
+
+**The "quantization improves accuracy via regularization" claim does not hold uniformly** — on ECG, explicit weight-decay regularization actively hurts accuracy (~3.8 points) while quantization helps, the opposite of what the regularization-equivalence claim predicts. On HAR, regularization alone outperforms quantization. This is the first real test of a claim that had previously only been supported by analogy (old logs: "quantization slightly improves over baseline... confirming the regularizer hypothesis" — never actually tested against an explicit-regularization baseline). Verdict: not confirmed, dataset-dependent, sometimes contradicted outright.
+
+### Key Findings
+
+1. **Point 1's core novelty claim is not supported by the full-scale data** — Dendritic shows no consistent robustness advantage over MLPBaseline or LayerMatchedMLP under quantization (identical 0.0026 mean delta across all three). This needs to be stated plainly in any writeup, not downplayed.
+2. **Two prior "definitive" single-seed conclusions were directionally right but overconfident** — topology-sharing collapse and the regularization hypothesis were both based on N=1 (or, for regularization, N=0 direct tests). Multi-seed/multi-dataset data confirms topology-sharing is bad but not a clean deterministic collapse, and outright contradicts the regularization hypothesis on ECG.
+3. **ECG is the compute bottleneck for every multi-seed run in this codebase** — ~20× slower per epoch than HAR, dominates every combined-dataset run's wall-clock time regardless of what's being measured.
+
+---
+
 ## Next Steps
 
 - [x] ~~Commit today's session work~~ — done in `2177bd0`
@@ -984,3 +1139,19 @@ This confirms weight-only Snowflake gives storage savings only — it decompress
 - [ ] Add Snowflake+Static to `plot_cross_dataset.py`/`plot_pareto.py`'s fixed method set (currently only in per-dataset plots)
 - [ ] Investigate TFLite Micro port for true microcontroller deployment (ESP32 / Arduino Nano 33 BLE Sense) — current Pi benchmarks validate ARM Linux, not MCU-class hardware
 - [ ] Fold `benchmark_pi_output/` corrected (post-PSU-fix) results into README's edge-deployment claims
+- [x] ~~Get SSH access to the Pi and re-run corrected-PSU benchmarks (batch=-1 and batch=1)~~ — done 2026-07-18
+- [x] ~~Run sustained-load thermal test to check for throttling risk~~ — done 2026-07-18 (15 min, no throttling, steady-state 46.2°C)
+- [x] ~~Add per-layer-shape-matched baseline (not just total-param-matched)~~ — done 2026-07-18 (`LayerMatchedMLP`)
+- [x] ~~Run MLP baseline(s) through all 8 compression methods, not just Snowflake~~ — done 2026-07-18 (`compress_all_methods()`)
+- [x] ~~Add "true inference precision" metric: quantized-vs-float32 output divergence, not just downstream accuracy~~ — done 2026-07-19 (`output_precision.py`, `output_divergence()`)
+- [x] ~~Add saturation-rate metric to `branch_diversity.py`~~ — done 2026-07-19 (`branch_saturation_rate()`)
+- [x] ~~Run the new 3-model/8-method baseline comparison at full 10-seed scale on all 4 datasets~~ — done 2026-07-19; **result: no consistent robustness advantage for Dendritic (identical 0.0026 mean accuracy-delta across all 3 models)** — Point 1's core claim not supported as stated
+- [x] ~~Re-run component ablation at multi-seed, multi-dataset~~ — done 2026-07-19 (3 seeds × 4 datasets); nuances the old single-seed "collapses to exact chance" framing
+- [x] ~~Test the "quantization improves accuracy via regularization" claim against an actual regularization baseline~~ — done 2026-07-19 (`run_regularization_ablation`); **not confirmed — contradicted on ECG, where explicit regularization hurts while quantization helps**
+- [ ] **Commit thermal_test.py + output_precision.py + LayerMatchedMLP/ablation/logging changes** (currently uncommitted — large multi-session diff)
+- [ ] **Fix ECG/EEG data leakage risk** — ECG uses Kaggle's pre-split CSVs (likely per-beat, not per-patient); EEG uses random `train_test_split`, no subject/session grouping. HAR is already correctly subject-split for reference
+- [ ] Add balanced accuracy + per-class precision/recall/specificity (only macro F1 + confusion matrix exist today)
+- [ ] Re-run architecture-size ablation (`run_ablation`, 3 model-size configs) at multi-seed — still 1-seed, ECG-only; component/regularization ablations now fixed but this one wasn't touched
+- [ ] Stop describing quantization as "lossless" in README/framing — TOST equivalence in downstream accuracy is not the same claim as lossless compression
+- [ ] Measure real power/energy draw per inference — needs INA219 (or similar) hardware, not yet acquired; Pi 3 has no built-in power ADC
+- [ ] Write up Point 1's negative robustness result and the regularization-ablation contradiction into the actual paper/report draft — currently only recorded in this log

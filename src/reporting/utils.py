@@ -78,6 +78,8 @@ def store_simple(results, timings, name, out, elapsed):
         "size_compressed_int4":    out["sizes"].get("compressed_int4"),
         "time_seconds":    elapsed,
         "num_seeds":       out.get("num_seeds", 1),
+        "method_comparison": out.get("method_comparison"),
+        "output_precision":  out.get("output_precision"),
         "curve_data":      out.get("curve_data"),
         "per_seed":        out.get("per_seed"),
         "loss_history":    out.get("loss_history"),

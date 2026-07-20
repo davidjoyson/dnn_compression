@@ -7,17 +7,19 @@ CONDITION_LABELS = {
     "none":      "Uncompressed",
     "topo_only": "Topo Only",
     "quant_only": "Quant Only",
+    "reg_only":  "Reg Only",
     "both":      "Both",
 }
 
-CONDITION_ORDER = ["none", "topo_only", "quant_only", "both"]
+CONDITION_ORDER = ["none", "topo_only", "quant_only", "reg_only", "both"]
 
 
-def plot_component_ablation(results, filename="component_ablation.png"):
+def plot_component_ablation(results, filename="component_ablation.png", title="Compression Component Ablation"):
     apply_style()
 
     conditions = [c for c in CONDITION_ORDER if c in results]
-    labels = [CONDITION_LABELS[c] for c in conditions]
+    conditions += [c for c in results if c not in conditions]
+    labels = [CONDITION_LABELS.get(c, c.replace("_", " ").title()) for c in conditions]
     means  = [results[c]["mean"] for c in conditions]
     stds   = [results[c].get("std", 0.0) for c in conditions]
 
@@ -38,7 +40,7 @@ def plot_component_ablation(results, filename="component_ablation.png"):
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.set_ylabel("Accuracy")
-    ax.set_title("Compression Component Ablation", pad=14)
+    ax.set_title(title, pad=14)
 
     tick_h = (y_max - y_min) * 0.015
     for i, (m, s) in enumerate(zip(means, stds)):

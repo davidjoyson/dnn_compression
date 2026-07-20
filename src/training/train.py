@@ -4,7 +4,8 @@ from torch.utils.data import TensorDataset, DataLoader
 
 
 def train(model, X, y, epochs=1, lr=1e-3, batch_size=64,
-          X_val=None, y_val=None, num_classes=1, weight_decay=0.0):
+          X_val=None, y_val=None, num_classes=1, weight_decay=0.0,
+          verbose=False, label=""):
     """
     Training loop for all experiments.
     - X_val / y_val  → if provided, computes val loss per epoch and returns
@@ -64,6 +65,13 @@ def train(model, X, y, epochs=1, lr=1e-3, batch_size=64,
             val_history["loss"].append(val_loss)
             val_history["acc"].append(val_acc)
             model.train()
+
+        if verbose:
+            prefix = f"[{label}] " if label else ""
+            line = f"    {prefix}epoch {len(history):>3}/{epochs}  loss={history[-1]:.4f}"
+            if X_val is not None:
+                line += f"  val_loss={val_history['loss'][-1]:.4f}  val_acc={val_history['acc'][-1]:.4f}"
+            print(line, flush=True)
 
     if X_val is not None:
         return history, val_history

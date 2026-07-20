@@ -155,12 +155,24 @@ def generate_plots(results):
             )
 
     if "Component Ablation" in results and isinstance(results["Component Ablation"], dict):
-        try:
-            plot_component_ablation(results["Component Ablation"],
-                                    filename="component_ablation.png")
-            print("  Component ablation plot saved")
-        except Exception as e:
-            print(f"  Warning: Could not plot component ablation: {e}")
+        for dataset, conditions in results["Component Ablation"].items():
+            try:
+                plot_component_ablation(conditions,
+                                        filename=f"component_ablation_{dataset}.png",
+                                        title=f"Compression Component Ablation ({dataset})")
+                print(f"  Component ablation plot saved ({dataset})")
+            except Exception as e:
+                print(f"  Warning: Could not plot component ablation ({dataset}): {e}")
+
+    if "Regularization Ablation" in results and isinstance(results["Regularization Ablation"], dict):
+        for dataset, conditions in results["Regularization Ablation"].items():
+            try:
+                plot_component_ablation(conditions,
+                                        filename=f"regularization_ablation_{dataset}.png",
+                                        title=f"Regularization vs. Quantization ({dataset})")
+                print(f"  Regularization ablation plot saved ({dataset})")
+            except Exception as e:
+                print(f"  Warning: Could not plot regularization ablation ({dataset}): {e}")
 
     if "Ablation Study" in results and isinstance(results["Ablation Study"], list):
         try:

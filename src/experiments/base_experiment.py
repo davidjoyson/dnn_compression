@@ -7,7 +7,7 @@ from sklearn.model_selection import train_test_split
 from src.training.train import train
 from src.training.evaluate import evaluate, f1_eval, confusion_matrix_eval, predict_proba_multiclass
 from src.models.dendritic_network import DendriticNetwork
-from src.models.mlp_baseline import MLPBaseline
+from src.models.mlp_baseline import MLPBaseline, LayerMatchedMLP
 from src.compression.compression_pipeline import (
     compress_model,
     decompress_model,
@@ -26,7 +26,99 @@ from src.compression.compression_pipeline import (
     mixed_model_size_bytes,
 )
 from src.analysis.branch_diversity import compute_branch_diversity
+from src.analysis.output_precision import output_divergence
 from src.analysis.tost import ci_95, tost_paired
+
+COMPARISON_METHODS = ["snowflake", "global", "dynamic", "static",
+                      "snowflake_static", "perchan", "qat", "mixed"]
+
+
+def compress_all_methods(model, X_train, y_train, X_test, y_test, num_classes, fine_tune_epochs):
+    """
+    Run a plain Linear-layer model (MLPBaseline / LayerMatchedMLP) through all
+    8 compression methods used on DendriticNetwork. Returns
+    {method: (acc, f1, size_bytes)}; failed FX methods return (None, None, None).
+    """
+    original_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+    results = {}
+
+    def reset():
+        model.load_state_dict(original_state)
+
+    reset()
+    c = compress_model(model, fine_tune_data=(X_train, y_train), fine_tune_epochs=fine_tune_epochs)
+    decompress_model(c, model)
+    results["snowflake"] = (evaluate(model, X_test, y_test, num_classes=num_classes),
+                            f1_eval(model, X_test, y_test, num_classes=num_classes),
+                            compressed_size_bytes(c))
+
+    reset()
+    c = compress_model_global(model, fine_tune_data=(X_train, y_train), fine_tune_epochs=fine_tune_epochs)
+    decompress_model(c, model)
+    results["global"] = (evaluate(model, X_test, y_test, num_classes=num_classes),
+                         f1_eval(model, X_test, y_test, num_classes=num_classes),
+                         compressed_size_bytes(c))
+
+    reset()
+    mq = compress_model_dynamic(model)
+    results["dynamic"] = (evaluate(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
+                          f1_eval(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
+                          dynamic_model_size_bytes(mq))
+
+    reset()
+    try:
+        mq = compress_model_static(model, calibration_data=(X_train, y_train))
+        results["static"] = (evaluate(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
+                             f1_eval(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
+                             static_model_size_bytes(mq))
+    except Exception as e:
+        print(f"[warn] Static quantization failed: {e}")
+        results["static"] = (None, None, None)
+
+    reset()
+    try:
+        mq = compress_model_snowflake_static(model, calibration_data=(X_train, y_train))
+        results["snowflake_static"] = (evaluate(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
+                                       f1_eval(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
+                                       static_model_size_bytes(mq))
+    except Exception as e:
+        print(f"[warn] Snowflake+Static quantization failed: {e}")
+        results["snowflake_static"] = (None, None, None)
+
+    reset()
+    try:
+        c = compress_model_per_channel(model)
+        decompress_model_per_channel(c, model)
+        results["perchan"] = (evaluate(model, X_test, y_test, num_classes=num_classes),
+                              f1_eval(model, X_test, y_test, num_classes=num_classes),
+                              per_channel_size_bytes(c))
+    except Exception as e:
+        print(f"[warn] Per-channel quantization failed: {e}")
+        results["perchan"] = (None, None, None)
+
+    reset()
+    try:
+        mq = compress_model_qat(model, train_data=(X_train, y_train), epochs=fine_tune_epochs,
+                                num_classes=num_classes)
+        results["qat"] = (evaluate(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
+                          f1_eval(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
+                          static_model_size_bytes(mq))
+    except Exception as e:
+        print(f"[warn] QAT failed: {e}")
+        results["qat"] = (None, None, None)
+
+    reset()
+    try:
+        mq = compress_model_mixed(model, calibration_data=(X_train, y_train))
+        results["mixed"] = (evaluate(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
+                            f1_eval(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
+                            mixed_model_size_bytes(mq))
+    except Exception as e:
+        print(f"[warn] Mixed precision failed: {e}")
+        results["mixed"] = (None, None, None)
+
+    reset()
+    return results
 
 
 def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_epochs, batch_size=128, model_dir=None, weight_decay=0.0):
@@ -60,6 +152,20 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     curve_data = None
     n_params = None
     branch_diversity = None
+    output_precision = None
+    model_float = None
+
+    # MLP + LayerMatchedMLP across all 8 compression methods (professor point 2/9:
+    # baselines must be tested with the same quantization methods as Dendritic)
+    mlp_acc  = {m: [] for m in COMPARISON_METHODS}
+    mlp_f1   = {m: [] for m in COMPARISON_METHODS}
+    mlp_size = {}
+    lm_acc_u_list, lm_f1_u_list = [], []
+    lm_acc  = {m: [] for m in COMPARISON_METHODS}
+    lm_f1   = {m: [] for m in COMPARISON_METHODS}
+    lm_size = {}
+    size_lm_u = None
+    n_params_lm = None
 
     for seed in seeds:
         X_raw_tr, y_raw_tr, X_raw_test, y_raw_test = get_data(seed)
@@ -90,7 +196,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         hist_u, val_hist_u = train(
             model_u, X_train, y_train, epochs=epochs,
             X_val=X_val, y_val=y_val, num_classes=num_classes, batch_size=batch_size,
-            weight_decay=weight_decay,
+            weight_decay=weight_decay, verbose=True, label=f"Dendritic seed={seed}",
         )
         acc_u_list.append(evaluate(model_u, X_test, y_test, num_classes=num_classes))
         f1_u_list.append(f1_eval(model_u, X_test, y_test, num_classes=num_classes))
@@ -103,6 +209,11 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         if model_dir and acc_u_list[-1] > best_acc_u:
             best_acc_u = acc_u_list[-1]
             best_state_u = original_state
+
+        if output_precision is None:
+            model_float = copy.deepcopy(model_u)
+            model_float.load_state_dict(original_state)
+            output_precision = {}
 
         if weight_dist is None:
             weights_before = np.concatenate([p.data.cpu().numpy().ravel() for p in model_u.parameters()])
@@ -117,9 +228,9 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             weight_dist = {"before": weights_before, "after": weights_after}
 
         if branch_diversity is None:
-            model_float = copy.deepcopy(model_u)
-            model_float.load_state_dict(original_state)
-            branch_diversity = compute_branch_diversity(model_float, model_u, X_train)
+            branch_diversity = compute_branch_diversity(model_float, model_u, X_train, X_test=X_test)
+        if "snowflake" not in output_precision:
+            output_precision["snowflake"] = output_divergence(model_float, model_u, X_test, num_classes)
         acc_c_list.append(evaluate(model_u, X_test, y_test, num_classes=num_classes))
         if model_dir and acc_c_list[-1] > best_acc_c:
             best_acc_c = acc_c_list[-1]
@@ -140,12 +251,16 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         compressed_global = compress_model_global(model_u, fine_tune_data=(X_train, y_train),
                                                   fine_tune_epochs=fine_tune_epochs)
         decompress_model(compressed_global, model_u)
+        if "global" not in output_precision:
+            output_precision["global"] = output_divergence(model_float, model_u, X_test, num_classes)
         acc_global_list.append(evaluate(model_u, X_test, y_test, num_classes=num_classes))
         f1_global_list.append(f1_eval(model_u, X_test, y_test, num_classes=num_classes))
 
         # PyTorch dynamic quantization
         model_u.load_state_dict(original_state)
         model_dynamic = compress_model_dynamic(model_u)
+        if "dynamic" not in output_precision:
+            output_precision["dynamic"] = output_divergence(model_float, model_dynamic, X_test, num_classes)
         acc_dynamic_list.append(evaluate(model_dynamic, X_test, y_test, num_classes=num_classes, device="cpu"))
         f1_dynamic_list.append(f1_eval(model_dynamic, X_test, y_test, num_classes=num_classes, device="cpu"))
 
@@ -153,6 +268,8 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         model_u.load_state_dict(original_state)
         try:
             model_static = compress_model_static(model_u, calibration_data=(X_train, y_train))
+            if "static" not in output_precision:
+                output_precision["static"] = output_divergence(model_float, model_static, X_test, num_classes)
             acc_static_list.append(evaluate(model_static, X_test, y_test, num_classes=num_classes, device="cpu"))
             f1_static_list.append(f1_eval(model_static, X_test, y_test, num_classes=num_classes, device="cpu"))
         except Exception as e:
@@ -165,6 +282,8 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         model_u.load_state_dict(original_state)
         try:
             model_snowflakestatic = compress_model_snowflake_static(model_u, calibration_data=(X_train, y_train))
+            if "snowflake_static" not in output_precision:
+                output_precision["snowflake_static"] = output_divergence(model_float, model_snowflakestatic, X_test, num_classes)
             acc_snowflakestatic_list.append(evaluate(model_snowflakestatic, X_test, y_test, num_classes=num_classes, device="cpu"))
             f1_snowflakestatic_list.append(f1_eval(model_snowflakestatic, X_test, y_test, num_classes=num_classes, device="cpu"))
         except Exception as e:
@@ -178,6 +297,8 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         try:
             compressed_perchan = compress_model_per_channel(model_u)
             decompress_model_per_channel(compressed_perchan, model_u)
+            if "perchan" not in output_precision:
+                output_precision["perchan"] = output_divergence(model_float, model_u, X_test, num_classes)
             acc_perchan_list.append(evaluate(model_u, X_test, y_test, num_classes=num_classes))
             f1_perchan_list.append(f1_eval(model_u, X_test, y_test, num_classes=num_classes))
         except Exception as e:
@@ -191,6 +312,8 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         try:
             model_qat = compress_model_qat(model_u, train_data=(X_train, y_train),
                                            epochs=fine_tune_epochs, num_classes=num_classes)
+            if "qat" not in output_precision:
+                output_precision["qat"] = output_divergence(model_float, model_qat, X_test, num_classes)
             acc_qat = evaluate(model_qat, X_test, y_test, num_classes=num_classes, device="cpu")
             acc_qat_list.append(acc_qat)
             f1_qat_list.append(f1_eval(model_qat, X_test, y_test, num_classes=num_classes, device="cpu"))
@@ -207,6 +330,8 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         model_u.load_state_dict(original_state)
         try:
             model_mixed = compress_model_mixed(model_u, calibration_data=(X_train, y_train))
+            if "mixed" not in output_precision:
+                output_precision["mixed"] = output_divergence(model_float, model_mixed, X_test, num_classes)
             acc_mixed_list.append(evaluate(model_mixed, X_test, y_test, num_classes=num_classes, device="cpu"))
             f1_mixed_list.append(f1_eval(model_mixed, X_test, y_test, num_classes=num_classes, device="cpu"))
         except Exception as e:
@@ -264,6 +389,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         hist_mlp, val_hist_mlp = train(
             mlp, X_train, y_train, epochs=epochs,
             X_val=X_val, y_val=y_val, num_classes=num_classes, batch_size=batch_size,
+            verbose=True, label=f"MLP seed={seed}",
         )
         acc_mlp_list.append(evaluate(mlp, X_test, y_test, num_classes=num_classes))
         if model_dir and acc_mlp_list[-1] > best_acc_mlp:
@@ -271,18 +397,51 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             best_state_mlp = {k: v.cpu().clone() for k, v in mlp.state_dict().items()}
         f1_mlp_list.append(f1_eval(mlp, X_test, y_test, num_classes=num_classes))
 
-        compressed_mlp = compress_model(mlp, fine_tune_data=(X_train, y_train),
-                                        fine_tune_epochs=fine_tune_epochs)
-        decompress_model(compressed_mlp, mlp)
-        acc_mlp_c_list.append(evaluate(mlp, X_test, y_test, num_classes=num_classes))
-        f1_mlp_c_list.append(f1_eval(mlp, X_test, y_test, num_classes=num_classes))
-
         if size_mlp_u is None:
             size_mlp_u = mlp.size_bytes()
-            size_mlp_c = compressed_size_bytes(compressed_mlp)
+
+        mlp_results = compress_all_methods(mlp, X_train, y_train, X_test, y_test,
+                                           num_classes, fine_tune_epochs)
+        for m in COMPARISON_METHODS:
+            acc, f1, size = mlp_results[m]
+            mlp_acc[m].append(acc)
+            mlp_f1[m].append(f1)
+            if mlp_size.get(m) is None and size is not None:
+                mlp_size[m] = size
+        # kept for backward compatibility with existing "mlp_compressed" reporting (= Snowflake)
+        acc_mlp_c_list.append(mlp_results["snowflake"][0])
+        f1_mlp_c_list.append(mlp_results["snowflake"][1])
+        if size_mlp_c is None:
+            size_mlp_c = mlp_size.get("snowflake")
 
         if "mlp_ms" not in inference_times:
             inference_times["mlp_ms"] = _time_ms(mlp)
+
+        # LayerMatchedMLP: same per-stage widths as DendriticNetwork's trunk
+        # (fc1 -> branch/soma bottleneck -> fc2 -> out), no branching. Isolates
+        # whether the branching topology itself matters, vs. a plain sequential
+        # network of the same shape (professor point 2).
+        lm = LayerMatchedMLP(
+            input_dim=X_train.shape[1], hidden_neurons1=64, branches=8,
+            hidden_neurons2=32, num_classes=num_classes,
+        )
+        if n_params_lm is None:
+            n_params_lm = sum(p.numel() for p in lm.parameters())
+        train(lm, X_train, y_train, epochs=epochs, num_classes=num_classes, batch_size=batch_size,
+              verbose=True, label=f"LayerMatchedMLP seed={seed}")
+        lm_acc_u_list.append(evaluate(lm, X_test, y_test, num_classes=num_classes))
+        lm_f1_u_list.append(f1_eval(lm, X_test, y_test, num_classes=num_classes))
+        if size_lm_u is None:
+            size_lm_u = lm.size_bytes()
+
+        lm_results = compress_all_methods(lm, X_train, y_train, X_test, y_test,
+                                          num_classes, fine_tune_epochs)
+        for m in COMPARISON_METHODS:
+            acc, f1, size = lm_results[m]
+            lm_acc[m].append(acc)
+            lm_f1[m].append(f1)
+            if lm_size.get(m) is None and size is not None:
+                lm_size[m] = size
 
         if loss_history is None:
             loss_history = {
@@ -416,6 +575,34 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "mlp_uncompressed":   size_mlp_u,
             "mlp_compressed":     size_mlp_c,
         },
+        # Baselines run through all 8 compression methods (professor points 2/9):
+        # MLPBaseline = total-param-matched control; LayerMatchedMLP = same
+        # per-stage widths as DendriticNetwork's trunk, no branching.
+        "method_comparison": {
+            "mlp": {
+                "accuracy_uncompressed": _mean(acc_mlp_list),
+                "f1_uncompressed":       _mean(f1_mlp_list),
+                "size_uncompressed":     size_mlp_u,
+                "accuracy":     {m: _mean_safe(mlp_acc[m]) for m in COMPARISON_METHODS},
+                "accuracy_std": {m: _std_safe(mlp_acc[m])  for m in COMPARISON_METHODS},
+                "f1":           {m: _mean_safe(mlp_f1[m])  for m in COMPARISON_METHODS},
+                "ci_95":        {m: _ci95_safe(mlp_acc[m]) for m in COMPARISON_METHODS},
+                "tost":         {m: tost_paired(acc_mlp_list, mlp_acc[m]) for m in COMPARISON_METHODS},
+                "sizes":        mlp_size,
+            },
+            "layer_matched": {
+                "accuracy_uncompressed": _mean(lm_acc_u_list),
+                "f1_uncompressed":       _mean(lm_f1_u_list),
+                "size_uncompressed":     size_lm_u,
+                "params":                n_params_lm,
+                "accuracy":     {m: _mean_safe(lm_acc[m]) for m in COMPARISON_METHODS},
+                "accuracy_std": {m: _std_safe(lm_acc[m])  for m in COMPARISON_METHODS},
+                "f1":           {m: _mean_safe(lm_f1[m])  for m in COMPARISON_METHODS},
+                "ci_95":        {m: _ci95_safe(lm_acc[m]) for m in COMPARISON_METHODS},
+                "tost":         {m: tost_paired(lm_acc_u_list, lm_acc[m]) for m in COMPARISON_METHODS},
+                "sizes":        lm_size,
+            },
+        },
         "num_seeds":        n,
         "loss_history":     loss_history,
         "val_acc_history":  val_acc_history,
@@ -423,6 +610,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         "class_names":      class_names,
         "weight_dist":      weight_dist,
         "branch_diversity": branch_diversity,
+        "output_precision": output_precision,
         "curve_data":       curve_data,
         "per_seed": {
             "acc_uncompressed":       acc_u_list,

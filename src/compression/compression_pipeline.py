@@ -50,7 +50,7 @@ def compress_model(model, fine_tune_data=None, fine_tune_epochs=3, fine_tune_lr=
         num_classes = getattr(model, "num_classes", 1)
         decompress_model(compressed, model)
         train(model, X, y, epochs=fine_tune_epochs, lr=fine_tune_lr,
-              num_classes=num_classes)
+              num_classes=num_classes, verbose=True, label="Snowflake fine-tune")
         compressed = _quantize(model)
 
     return compressed
@@ -107,7 +107,7 @@ def compress_model_global(model, fine_tune_data=None, fine_tune_epochs=3, fine_t
         num_classes = getattr(model, "num_classes", 1)
         decompress_model(compressed, model)
         train(model, X, y, epochs=fine_tune_epochs, lr=fine_tune_lr,
-              num_classes=num_classes)
+              num_classes=num_classes, verbose=True, label="Global fine-tune")
         compressed = _quantize_global(model)
     return compressed
 
@@ -227,7 +227,8 @@ def compress_model_qat(model, train_data, epochs=10, lr=1e-4, num_classes=1, bac
     prepared = prepare_qat_fx(model_copy, qconfig_mapping, (X_sample,))
 
     X, y = train_data[0].cpu(), train_data[1].cpu()
-    train(prepared, X, y, epochs=epochs, lr=lr, num_classes=num_classes)
+    train(prepared, X, y, epochs=epochs, lr=lr, num_classes=num_classes,
+          verbose=True, label="QAT fine-tune")
 
     prepared = prepared.cpu().eval()
     return convert_fx(prepared)
@@ -330,7 +331,8 @@ def compress_model_int4(model, fine_tune_data=None, fine_tune_epochs=3, fine_tun
         X, y = fine_tune_data
         num_classes = getattr(model, "num_classes", 1)
         decompress_model_int4(compressed, model)
-        train(model, X, y, epochs=fine_tune_epochs, lr=fine_tune_lr, num_classes=num_classes)
+        train(model, X, y, epochs=fine_tune_epochs, lr=fine_tune_lr, num_classes=num_classes,
+              verbose=True, label="int4 fine-tune")
         compressed = _quantize_int4(model)
     return compressed
 

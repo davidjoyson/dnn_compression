@@ -41,7 +41,8 @@ def run_int4(name, loader, num_classes):
         model = DendriticNetwork(input_dim=Xtr.shape[1], hidden_neurons1=64,
                                  hidden_neurons2=32, branches=8,
                                  hidden_per_branch=8, num_classes=num_classes)
-        train(model, Xtr, ytr, epochs=EPOCHS, num_classes=num_classes)
+        train(model, Xtr, ytr, epochs=EPOCHS, num_classes=num_classes,
+              verbose=True, label=f"{name} seed={seed}")
         acc_u.append(evaluate(model, Xte, yte, num_classes=num_classes))
 
         orig = {k: v.cpu().clone() for k, v in model.state_dict().items()}

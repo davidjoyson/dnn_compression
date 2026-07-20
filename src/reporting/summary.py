@@ -101,12 +101,15 @@ def print_summary(results, timings):
             print(time_str, end="")
             continue
 
-        if name == "Component Ablation" and isinstance(r, dict) and "none" in r:
+        if name in ("Component Ablation", "Regularization Ablation") and isinstance(r, dict):
             print(f"{name}:")
-            for condition, stats in r.items():
-                mse_m = stats.get("mse_mean", float("nan"))
-                mse_s = stats.get("mse_std",  0.0)
-                print(f"  {condition:<12}: acc={stats['mean']:.4f} +/- {stats['std']:.4f}  mse={mse_m:.4f} +/- {mse_s:.4f}")
+            for dataset, conditions in r.items():
+                print(f"  [{dataset}]")
+                for condition, stats in conditions.items():
+                    mse_m = stats.get("mse_mean", float("nan"))
+                    mse_s = stats.get("mse_std",  0.0)
+                    mse_str = f"  mse={mse_m:.4f} +/- {mse_s:.4f}" if "mse_mean" in stats else ""
+                    print(f"    {condition:<12}: acc={stats['mean']:.4f} +/- {stats['std']:.4f}{mse_str}")
             print(time_str, end="")
             continue
 
@@ -247,6 +250,58 @@ def print_summary(results, timings):
                     print(f"    {lbl}: {verdict}  diff={t['mean_diff']:+.4f}"
                           f"  CI=[{t['ci_low']:+.4f}, {t['ci_high']:+.4f}]"
                           f"  (p_low={t['p_low']:.4f}, p_high={t['p_high']:.4f})")
+
+        mc = r.get("method_comparison")
+        if mc:
+            _MC_LABELS = [
+                ("snowflake",        "Snowflake"),
+                ("global",           "Global   "),
+                ("dynamic",          "Dynamic  "),
+                ("static",           "Static   "),
+                ("snowflake_static", "SF+Static"),
+                ("perchan",          "Per-chan "),
+                ("qat",              "QAT      "),
+                ("mixed",            "Mixed    "),
+            ]
+            print(f"  Baseline Comparison (all methods, n={n_seeds}):")
+            for model_key, model_label in [("mlp", "MLP (total-param-matched)"),
+                                           ("layer_matched", "LayerMatchedMLP (per-layer-matched)")]:
+                mdl = mc.get(model_key)
+                if not mdl:
+                    continue
+                au = to_float(mdl.get("accuracy_uncompressed", float("nan")))
+                print(f"    {model_label}: uncompressed={au:.4f}")
+                for key, lbl in _MC_LABELS:
+                    acc = to_float(mdl.get("accuracy", {}).get(key, float("nan")))
+                    if math.isnan(acc):
+                        continue
+                    t = mdl.get("tost", {}).get(key, {})
+                    verdict = "EQUIV    " if t.get("equivalent") else ("NOT EQUIV" if t.get("equivalent") is False else "n/a      ")
+                    diff = to_float(t.get("mean_diff", float("nan")))
+                    diff_str = f"  diff={diff:+.4f}" if not math.isnan(diff) else ""
+                    print(f"      {lbl}: {acc:.4f}  {verdict}{diff_str}")
+
+        op = r.get("output_precision")
+        if op:
+            print(f"  Output Precision (Dendritic, vs float32 reference, not vs labels):")
+            _OP_LABELS = [
+                ("snowflake",        "Snowflake"),
+                ("global",           "Global   "),
+                ("dynamic",          "Dynamic  "),
+                ("static",           "Static   "),
+                ("snowflake_static", "SF+Static"),
+                ("perchan",          "Per-chan "),
+                ("qat",              "QAT      "),
+                ("mixed",            "Mixed    "),
+            ]
+            for key, lbl in _OP_LABELS:
+                d = op.get(key)
+                if not d:
+                    continue
+                kl = d.get("kl_divergence")
+                kl_str = f"  KL={kl:.6f}" if kl is not None else ""
+                print(f"    {lbl}: logit_MSE={d['logit_mse']:.6f}  cos_sim={d['cosine_similarity']:.4f}"
+                      f"{kl_str}  pred_flip={d['pred_flip_rate']:.4f}")
 
         ep = r.get("edge_profile")
         if ep:

@@ -37,7 +37,8 @@ def run_ablation(configs, X_train, y_train, X_test, y_test, epochs=50, num_class
             num_classes=num_classes,
         )
 
-        train(model_u, X_train, y_train, epochs=epochs, num_classes=num_classes)
+        train(model_u, X_train, y_train, epochs=epochs, num_classes=num_classes,
+              verbose=True, label=f"h1={cfg['h1']} h2={cfg['h2']} br={cfg['branches']}")
         acc_u = evaluate(model_u, X_test, y_test, num_classes=num_classes)
         mse_u = mse_score(model_u, X_test, y_test) if num_classes == 1 else float("nan")
 
@@ -100,7 +101,8 @@ def run_compression_component_ablation(
             hidden_per_branch=config["hidden_per_branch"],
             num_classes=num_classes,
         )
-        train(base_model, X_train, y_train, epochs=epochs, num_classes=num_classes)
+        train(base_model, X_train, y_train, epochs=epochs, num_classes=num_classes,
+              verbose=True, label=f"component seed={seed}")
 
         # none: evaluate as-is
         _mse = (lambda m: mse_score(m, X_test, y_test)) if num_classes == 1 else (lambda m: float("nan"))
@@ -143,3 +145,74 @@ def run_compression_component_ablation(
         }}
         for condition in acc_by_condition
     }
+
+
+def run_regularization_ablation(
+    X_train, y_train, X_test, y_test, config, epochs=50, seeds=(42,),
+    num_classes=1, weight_decay=1e-3,
+):
+    """
+    Isolates whether quantization's accuracy gain is explainable by
+    regularization alone, rather than something quantization-specific.
+
+    Conditions tested per seed (single variable changed: none/quant/reg):
+      none       — float32 baseline, no weight decay
+      quant_only — same trained model, then int8 quantized (Snowflake)
+      reg_only   — retrained from the same seed with weight_decay, kept float32
+
+    If reg_only's accuracy gain over none matches quant_only's gain,
+    that supports the "quantization improves accuracy via regularization"
+    claim; if not, the effect isn't just regularization.
+    """
+    X_train = torch.tensor(X_train, dtype=torch.float32)
+    y_train = torch.tensor(y_train, dtype=torch.long if num_classes > 1 else torch.float32)
+    if num_classes == 1:
+        y_train = y_train.reshape(-1, 1)
+    X_test  = torch.tensor(X_test,  dtype=torch.float32)
+    y_test  = torch.tensor(y_test,  dtype=torch.long if num_classes > 1 else torch.float32)
+    if num_classes == 1:
+        y_test = y_test.reshape(-1, 1)
+
+    acc_by_condition = {"none": [], "quant_only": [], "reg_only": []}
+
+    for seed in seeds:
+        torch.manual_seed(seed)
+        base_model = DendriticNetwork(
+            input_dim=X_train.shape[1],
+            hidden_neurons1=config["h1"],
+            hidden_neurons2=config["h2"],
+            branches=config["branches"],
+            hidden_per_branch=config["hidden_per_branch"],
+            num_classes=num_classes,
+        )
+        train(base_model, X_train, y_train, epochs=epochs, num_classes=num_classes,
+              verbose=True, label=f"reg none seed={seed}")
+        acc_by_condition["none"].append(evaluate(base_model, X_test, y_test, num_classes=num_classes))
+
+        m_quant = copy.deepcopy(base_model)
+        compressed_q = compress_model(m_quant)
+        decompress_model(compressed_q, m_quant)
+        acc_by_condition["quant_only"].append(evaluate(m_quant, X_test, y_test, num_classes=num_classes))
+
+        # Same seed -> identical init + data shuffle order as base_model;
+        # weight_decay is the only variable that differs.
+        torch.manual_seed(seed)
+        m_reg = DendriticNetwork(
+            input_dim=X_train.shape[1],
+            hidden_neurons1=config["h1"],
+            hidden_neurons2=config["h2"],
+            branches=config["branches"],
+            hidden_per_branch=config["hidden_per_branch"],
+            num_classes=num_classes,
+        )
+        train(m_reg, X_train, y_train, epochs=epochs, num_classes=num_classes, weight_decay=weight_decay,
+              verbose=True, label=f"reg_only seed={seed}")
+        acc_by_condition["reg_only"].append(evaluate(m_reg, X_test, y_test, num_classes=num_classes))
+
+    def _stats(lst):
+        n = len(lst)
+        mean = float(sum(lst) / n)
+        std  = float(torch.tensor(lst).std().item()) if n > 1 else 0.0
+        return {"mean": mean, "std": std}
+
+    return {condition: _stats(acc_by_condition[condition]) for condition in acc_by_condition}

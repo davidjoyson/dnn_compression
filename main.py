@@ -6,13 +6,18 @@ import time
 
 from tqdm import tqdm
 
-from src.experiments.ablation_study import run_ablation, run_compression_component_ablation
+from src.experiments.ablation_study import (
+    run_ablation, run_compression_component_ablation, run_regularization_ablation,
+)
 from src.experiments.har_experiment import run_har
 from src.experiments.ecg_experiment import run_ecg
 from src.experiments.eeg_experiment import run_eeg
 from src.experiments.hapt_experiment import run_hapt
 
 from src.loaders.load_ecg import load_ecg
+from src.loaders.load_har import load_har
+from src.loaders.load_eeg import load_eeg
+from src.loaders.load_hapt import load_hapt
 
 from src.models.dendritic_network import DendriticNetwork
 from src.models.mlp_baseline import MLPBaseline
@@ -32,7 +37,7 @@ from src.reporting import (
 SEEDS  = (42, 0, 7, 1, 2, 3, 4, 5, 6, 8)
 EPOCHS = 50
 
-ALL_EXPERIMENTS = ["har", "ecg", "eeg", "hapt", "ablation", "component"]
+ALL_EXPERIMENTS = ["har", "ecg", "eeg", "hapt", "ablation", "component", "regularization"]
 _DEFAULT_EXPERIMENTS = ["har", "ecg", "eeg", "hapt"]
 
 class _Tee:
@@ -70,16 +75,46 @@ def _run_ablation(results, timings, epochs, seeds):
     timings["Ablation Study"] = time.time() - t0
 
 
+# Same DendriticNetwork shape used for the main per-dataset experiments
+# (base_experiment.py), so ablation results are comparable to the main results.
+_ABLATION_CONFIG = {"h1": 64, "h2": 32, "branches": 8, "hidden_per_branch": 8}
+
+_ABLATION_DATASETS = {
+    "har":  (lambda: load_har(),  6),
+    "ecg":  (lambda: load_ecg(),  5),
+    "eeg":  (lambda: load_eeg(),  3),
+    "hapt": (lambda: load_hapt(), 12),
+}
+
+
 def _run_component(results, timings, epochs, seeds):
     print("\n=== Component Ablation ===\n")
-    X_raw_tr, y_raw_tr, X_raw_te, y_raw_te = load_ecg()
     t0 = time.time()
-    results["Component Ablation"] = run_compression_component_ablation(
-        X_train=X_raw_tr, y_train=y_raw_tr, X_test=X_raw_te, y_test=y_raw_te,
-        config={"h1": 32, "h2": 16, "branches": 4, "hidden_per_branch": 4},
-        epochs=epochs, seeds=seeds[:1], num_classes=5,
-    )
+    out = {}
+    for name, (loader, num_classes) in _ABLATION_DATASETS.items():
+        print(f"  -- dataset: {name} --")
+        X_tr, y_tr, X_te, y_te = loader()
+        out[name] = run_compression_component_ablation(
+            X_train=X_tr, y_train=y_tr, X_test=X_te, y_test=y_te,
+            config=_ABLATION_CONFIG, epochs=epochs, seeds=seeds, num_classes=num_classes,
+        )
+    results["Component Ablation"] = out
     timings["Component Ablation"] = time.time() - t0
+
+
+def _run_regularization(results, timings, epochs, seeds):
+    print("\n=== Regularization Ablation ===\n")
+    t0 = time.time()
+    out = {}
+    for name, (loader, num_classes) in _ABLATION_DATASETS.items():
+        print(f"  -- dataset: {name} --")
+        X_tr, y_tr, X_te, y_te = loader()
+        out[name] = run_regularization_ablation(
+            X_train=X_tr, y_train=y_tr, X_test=X_te, y_test=y_te,
+            config=_ABLATION_CONFIG, epochs=epochs, seeds=seeds, num_classes=num_classes,
+        )
+    results["Regularization Ablation"] = out
+    timings["Regularization Ablation"] = time.time() - t0
 
 
 _EXP_TABLE = {
@@ -90,8 +125,9 @@ _EXP_TABLE = {
 }
 
 _ABLATION_REGISTRY = {
-    "ablation":  _run_ablation,
-    "component": _run_component,
+    "ablation":       _run_ablation,
+    "component":      _run_component,
+    "regularization": _run_regularization,
 }
 
 # ------------------------------------------------------------------ #
