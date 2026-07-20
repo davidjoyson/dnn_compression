@@ -1167,6 +1167,47 @@ Added a batch=1 latency table (Float32 / Snowflake / Static / Snowflake+Static) 
 
 ---
 
+## 2026-07-20 — ECG Patient-Independent Split: Quantifying Data Leakage
+
+**Commits:** *(pending)*
+
+### Summary
+Confirmed (by reading the loader code, not assuming) that the standard ECG experiment leaks data: `load_ecg.py` reads Kaggle's pre-split `mitbih_train/test.csv`, which carries no patient/record ID and is known to split by individual beat rather than by patient — so the same patient's beats can appear in both train and test. Built a patient-independent replacement (`src/loaders/load_ecg_patient_split.py`) directly from the raw PhysioNet MIT-BIH database, using the standard DS1 (train, 22 records) / DS2 (test, 22 records) split from de Chazal et al. 2004, wired it in as a new `ecg_patient` experiment, and measured the real size of the leakage effect.
+
+### Data pipeline
+- Pulled raw MIT-BIH via `wfdb.dl_database('mitdb', dl_dir='data/mitdb_raw')`.
+- Extracted beats via midpoint-to-midpoint windowing between adjacent R-peaks (matching the Kaggle CSV's implicit convention), resampled to 187 samples via linear interpolation.
+- Mapped raw annotation symbols to the same 5-class AAMI N/S/V/F/Q scheme the Kaggle CSV uses.
+- Split by record ID (DS1 → train, DS2 → test) — no beat from any DS2 patient ever appears in training.
+- Train set: 229,225 beats, oversampled to perfectly balanced (45,845 per class) — matching `load_ecg.py`'s `balance=True` default so the comparison isolates the leakage effect alone.
+- Test set: 49,690 beats, **left at natural class distribution** (44,238 Normal / 1,836 S / 3,221 V / 388 F / 7 Q) — balancing only ever touches train.
+
+### First attempt was confounded, caught before reporting it
+Initial run used the patient-split loader *without* balancing (default class distribution in training), giving 87.92% uncompressed accuracy — but that's not a clean comparison against the original's 96.77%, since the original trains on a balanced set. Added matching `balance=True` oversampling logic to `load_ecg_patient_split.py` and re-ran.
+
+### Full Run — 10 Seeds, 50 Epochs (`run_20260720_183742_ecg_patient_epo50`)
+
+**Time: 3h 31m 37s.**
+
+| | Uncompressed Acc | Best compressed |
+|---|---|---|
+| Original ECG (random/leaky split, balanced train) | 0.9677 | — |
+| ECG patient-split, unbalanced (confounded, discarded) | 0.8792 | 0.8838 |
+| **ECG patient-split, balanced (clean, apples-to-apples)** | **0.8371 ± 0.0221** | **0.8697 ± 0.0110 (QAT)** |
+
+Model comparison under the clean patient-split (uncompressed): Dendritic 0.8371 > LayerMatchedMLP 0.8087 > MLPBaseline 0.7901 — Dendritic keeps its edge over both controls even on the leakage-free split.
+
+Macro F1 is low (0.36 uncompressed) — DS2's natural test distribution is dominated by Normal beats (44,238 of 49,690), so accuracy alone is a poor read on minority-class (S/V/F/Q) performance; only balanced accuracy or per-class metrics would show that properly (still not implemented — see Next Steps).
+
+### Key Findings
+
+1. **The real leakage-driven accuracy inflation is ~13 percentage points** (96.77% → 83.71%), not the ~8.3pp the first, confounded comparison suggested. The confounded number understated it because it compared a balanced model against an unbalanced one — the unbalanced patient-split model's 87.92% was itself inflated by majority-class bias, partially masking the true gap.
+2. **Dendritic's edge over MLPBaseline/LayerMatchedMLP survives the leakage fix** — this is a genuinely positive result for the architecture, independent of the (unsupported) quantization-robustness claim.
+3. **Compression again looks "free" or even beneficial on accuracy** (Snowflake +2.5pp, QAT +3.3pp over uncompressed) on this imbalanced test set — consistent with the pattern seen elsewhere that raw accuracy is a weak signal here; needs the per-class metrics (Next Steps) to confirm this isn't just quantization noise nudging majority-class predictions.
+4. **EEG's leakage risk is still unaddressed** — only ECG has been fixed so far; EEG's loader still uses a plain random `train_test_split` with no subject/session grouping.
+
+---
+
 ## Next Steps
 
 - [x] ~~Commit today's session work~~ — done in `2177bd0`
@@ -1201,7 +1242,8 @@ Added a batch=1 latency table (Float32 / Snowflake / Static / Snowflake+Static) 
 - [x] ~~Re-run component ablation at multi-seed, multi-dataset~~ — done 2026-07-19 (3 seeds × 4 datasets); nuances the old single-seed "collapses to exact chance" framing
 - [x] ~~Test the "quantization improves accuracy via regularization" claim against an actual regularization baseline~~ — done 2026-07-19 (`run_regularization_ablation`); **not confirmed — contradicted on ECG, where explicit regularization hurts while quantization helps**
 - [x] ~~Commit thermal_test.py + output_precision.py + LayerMatchedMLP/ablation/logging changes~~ — done 2026-07-19 (`d5a70b6`)
-- [ ] **Fix ECG/EEG data leakage risk** — ECG uses Kaggle's pre-split CSVs (likely per-beat, not per-patient); EEG uses random `train_test_split`, no subject/session grouping. HAR is already correctly subject-split for reference
+- [x] ~~Fix ECG data leakage risk~~ — done 2026-07-20 (`load_ecg_patient_split.py`, DS1/DS2 patient-independent split from raw PhysioNet MIT-BIH); **finding: true leakage inflation is ~13pp (96.77% → 83.71%), Dendritic's edge over MLPBaseline/LayerMatchedMLP survives the fix**
+- [ ] **Fix EEG data leakage risk** — EEG uses random `train_test_split`, no subject/session grouping. HAR/HAPT are already correctly subject-split for reference
 - [ ] Add balanced accuracy + per-class precision/recall/specificity (only macro F1 + confusion matrix exist today)
 - [x] ~~Re-run architecture-size ablation (`run_ablation`, 3 model-size configs) at multi-seed~~ — done 2026-07-20 (3 seeds × 4 datasets); **finding: tiny configs (2 branches) are barely trainable (std up to 0.38), and Snowflake compression genuinely costs -3.2pp on ECG at the smallest scale — "lossless" holds from medium size up, not universally**
 - [ ] Stop describing quantization as "lossless" in README/framing — TOST equivalence in downstream accuracy is not the same claim as lossless compression

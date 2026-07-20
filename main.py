@@ -11,6 +11,7 @@ from src.experiments.ablation_study import (
 )
 from src.experiments.har_experiment import run_har
 from src.experiments.ecg_experiment import run_ecg
+from src.experiments.ecg_patient_experiment import run_ecg_patient
 from src.experiments.eeg_experiment import run_eeg
 from src.experiments.hapt_experiment import run_hapt
 
@@ -37,7 +38,7 @@ from src.reporting import (
 SEEDS  = (42, 0, 7, 1, 2, 3, 4, 5, 6, 8)
 EPOCHS = 50
 
-ALL_EXPERIMENTS = ["har", "ecg", "eeg", "hapt", "ablation", "component", "regularization"]
+ALL_EXPERIMENTS = ["har", "ecg", "ecg_patient", "eeg", "hapt", "ablation", "component", "regularization"]
 _DEFAULT_EXPERIMENTS = ["har", "ecg", "eeg", "hapt"]
 
 class _Tee:
@@ -124,10 +125,11 @@ def _run_regularization(results, timings, epochs, seeds):
 
 
 _EXP_TABLE = {
-    "har":  ("UCI HAR (Wearable Sensors)",        "UCI HAR",       run_har),
-    "ecg":  ("ECG Heartbeat (MIT-BIH, 5-class)",  "ECG Heartbeat", run_ecg),
-    "eeg":  ("EEG Brainwave (Emotions, 3-class)",  "EEG Brainwave", run_eeg),
-    "hapt": ("HAPT (UCI Smartphone, 12-class)",    "HAPT",          run_hapt),
+    "har":         ("UCI HAR (Wearable Sensors)",             "UCI HAR",           run_har),
+    "ecg":         ("ECG Heartbeat (MIT-BIH, 5-class)",       "ECG Heartbeat",     run_ecg),
+    "ecg_patient": ("ECG Heartbeat (Patient-Split, 5-class)", "ECG Patient-Split", run_ecg_patient),
+    "eeg":         ("EEG Brainwave (Emotions, 3-class)",      "EEG Brainwave",     run_eeg),
+    "hapt":        ("HAPT (UCI Smartphone, 12-class)",        "HAPT",              run_hapt),
 }
 
 _ABLATION_REGISTRY = {
