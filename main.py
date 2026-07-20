@@ -59,22 +59,6 @@ class _Tee:
 # Experiment runners (each fills results + timings)                   #
 # ------------------------------------------------------------------ #
 
-def _run_ablation(results, timings, epochs, seeds):
-    print("\n=== Ablation Study ===\n")
-    X_tr, y_tr, X_te, y_te = load_ecg()
-    configs = [
-        {"h1": 16, "h2":  8, "branches": 2, "hidden_per_branch": 4},
-        {"h1": 32, "h2": 16, "branches": 4, "hidden_per_branch": 4},
-        {"h1": 64, "h2": 32, "branches": 6, "hidden_per_branch": 4},
-    ]
-    t0 = time.time()
-    results["Ablation Study"] = run_ablation(
-        configs=configs, X_train=X_tr, y_train=y_tr, X_test=X_te, y_test=y_te,
-        epochs=epochs, num_classes=5,
-    )
-    timings["Ablation Study"] = time.time() - t0
-
-
 # Same DendriticNetwork shape used for the main per-dataset experiments
 # (base_experiment.py), so ablation results are comparable to the main results.
 _ABLATION_CONFIG = {"h1": 64, "h2": 32, "branches": 8, "hidden_per_branch": 8}
@@ -85,6 +69,28 @@ _ABLATION_DATASETS = {
     "eeg":  (lambda: load_eeg(),  3),
     "hapt": (lambda: load_hapt(), 12),
 }
+
+# 3 architecture sizes, small -> large, same shape family as _ABLATION_CONFIG
+_ARCH_SIZE_CONFIGS = [
+    {"h1": 16, "h2":  8, "branches": 2, "hidden_per_branch": 4},
+    {"h1": 32, "h2": 16, "branches": 4, "hidden_per_branch": 4},
+    {"h1": 64, "h2": 32, "branches": 6, "hidden_per_branch": 4},
+]
+
+
+def _run_ablation(results, timings, epochs, seeds):
+    print("\n=== Ablation Study ===\n")
+    t0 = time.time()
+    out = {}
+    for name, (loader, num_classes) in _ABLATION_DATASETS.items():
+        print(f"  -- dataset: {name} --")
+        X_tr, y_tr, X_te, y_te = loader()
+        out[name] = run_ablation(
+            configs=_ARCH_SIZE_CONFIGS, X_train=X_tr, y_train=y_tr, X_test=X_te, y_test=y_te,
+            epochs=epochs, seeds=seeds, num_classes=num_classes,
+        )
+    results["Ablation Study"] = out
+    timings["Ablation Study"] = time.time() - t0
 
 
 def _run_component(results, timings, epochs, seeds):

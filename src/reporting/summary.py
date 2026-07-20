@@ -101,6 +101,21 @@ def print_summary(results, timings):
             print(time_str, end="")
             continue
 
+        if name == "Ablation Study" and isinstance(r, dict):
+            print(f"{name}:")
+            for dataset, configs in r.items():
+                print(f"  [{dataset}]")
+                for i, cfg_r in enumerate(configs):
+                    cfg = cfg_r.get("config", {})
+                    au = cfg_r.get("accuracy_uncompressed", {})
+                    ac = cfg_r.get("accuracy_compressed", {})
+                    tag = f"h1={cfg.get('h1','?')} h2={cfg.get('h2','?')} br={cfg.get('branches','?')}"
+                    print(f"    Config {i+1} {tag}: "
+                          f"acc_u={au.get('mean', float('nan')):.4f} +/- {au.get('std', 0.0):.4f}  "
+                          f"acc_c={ac.get('mean', float('nan')):.4f} +/- {ac.get('std', 0.0):.4f}")
+            print(time_str, end="")
+            continue
+
         if name in ("Component Ablation", "Regularization Ablation") and isinstance(r, dict):
             print(f"{name}:")
             for dataset, conditions in r.items():

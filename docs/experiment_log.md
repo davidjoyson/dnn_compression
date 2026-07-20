@@ -1132,6 +1132,41 @@ Added a batch=1 latency table (Float32 / Snowflake / Static / Snowflake+Static) 
 
 ---
 
+## 2026-07-20 — Architecture-Size Ablation Fixed (Multi-Seed, Multi-Dataset)
+
+**Commits:** *(pending)*
+
+### Summary
+`run_ablation()` (the 3-model-size sweep) had no seed loop at all — one training run per config, ECG-only, whatever the ambient RNG happened to be. This was the least rigorous ablation in the codebase, even behind where component/regularization ablations started before this session's fixes. Brought it in line: added a proper seed loop (mean ± std per config) and extended to all 4 datasets, mirroring the pattern already used for component/regularization ablations.
+
+### Code changes
+
+`run_ablation()` (`ablation_study.py`) now takes a `seeds` param, loops per config, and returns `{"mean", "std"}` dicts for accuracy/MSE instead of raw scalars (size stays a plain scalar — deterministic per config, doesn't depend on trained weights). `main.py`'s `_run_ablation` now loops over `_ABLATION_DATASETS` (the same dict introduced for component/regularization) instead of hardcoding `load_ecg()`, with a per-dataset banner print. `summary.py` and `plots.py` updated to handle the new `{dataset: [config_results...]}` nested structure, generating one `ablation_study_{dataset}.png` per dataset.
+
+### Full Run — 3 Seeds (42, 0, 7), All 4 Datasets, 50 Epochs (`run_20260720_123529_ablation_epo50`)
+
+**Time: ~3h23m**, ECG-dominated as always (the largest config alone, h1=64/branches=6, took over an hour across its 3 seeds).
+
+| Dataset | Config 1 (h1=16,br=2) | Config 2 (h1=32,br=4) | Config 3 (h1=64,br=6) |
+|---|---|---|---|
+| HAR | 0.583±**0.378** → 0.582±0.378 | 0.938±0.008 → 0.938±0.007 | 0.939±0.010 → 0.939±0.010 |
+| ECG | 0.825±0.084 → 0.793±0.118 (**−3.2pp**) | 0.915±0.005 → 0.911±0.011 | 0.961±0.004 → 0.961±0.002 |
+| EEG | 0.974±0.001 → 0.973±0.001 | 0.977±0.005 → 0.977±0.005 | 0.979±0.002 → 0.980±0.001 |
+| HAPT | 0.667±**0.220** → 0.709±0.168 | 0.908±0.018 → 0.909±0.019 | 0.928±0.001 → 0.927±0.001 |
+
+(uncompressed → Snowflake-compressed accuracy, mean ± std across 3 seeds)
+
+**Finding 1 — Config 1 (2 branches, tiny) is barely trainable, independent of compression.** Std of 0.378 on HAR and 0.220 on HAPT means some seeds land near-random while others train fine — this is a training-stability problem at that scale, not a quantization artifact.
+
+**Finding 2 — "Snowflake is lossless" holds well from Config 2 upward, but genuinely breaks down at the smallest scale tested, on ECG specifically.** Config 1 shows a real −3.2pp drop under compression on ECG; Configs 2 and 3 stay within ~0.4pp everywhere, matching the near-zero-delta pattern seen at full scale in the main experiments. So the "compression is free" result is solid for reasonably-sized dendritic networks but not unconditionally true — it can degrade at the smallest end, at least on some datasets.
+
+### Key Findings
+
+1. **Architecture-size ablation is now on the same statistical footing as the other two ablations** (3 seeds, 4 datasets) — closes the last remaining "still 1-seed" gap flagged in the project summary.
+2. **Model-size floor effect identified**: below a certain size (Config 1: 2 branches, h1=16), DendriticNetwork struggles to train reliably at all, and when it does train, compression can cost real accuracy (ECG). This is a genuine boundary condition worth noting in any writeup that claims "quantization is lossless" — it's lossless in the regime actually used (Config 3-scale and up), not universally.
+
+---
+
 ## Next Steps
 
 - [x] ~~Commit today's session work~~ — done in `2177bd0`
@@ -1168,7 +1203,7 @@ Added a batch=1 latency table (Float32 / Snowflake / Static / Snowflake+Static) 
 - [x] ~~Commit thermal_test.py + output_precision.py + LayerMatchedMLP/ablation/logging changes~~ — done 2026-07-19 (`d5a70b6`)
 - [ ] **Fix ECG/EEG data leakage risk** — ECG uses Kaggle's pre-split CSVs (likely per-beat, not per-patient); EEG uses random `train_test_split`, no subject/session grouping. HAR is already correctly subject-split for reference
 - [ ] Add balanced accuracy + per-class precision/recall/specificity (only macro F1 + confusion matrix exist today)
-- [ ] Re-run architecture-size ablation (`run_ablation`, 3 model-size configs) at multi-seed — still 1-seed, ECG-only; component/regularization ablations now fixed but this one wasn't touched
+- [x] ~~Re-run architecture-size ablation (`run_ablation`, 3 model-size configs) at multi-seed~~ — done 2026-07-20 (3 seeds × 4 datasets); **finding: tiny configs (2 branches) are barely trainable (std up to 0.38), and Snowflake compression genuinely costs -3.2pp on ECG at the smallest scale — "lossless" holds from medium size up, not universally**
 - [ ] Stop describing quantization as "lossless" in README/framing — TOST equivalence in downstream accuracy is not the same claim as lossless compression
 - [ ] Write up Point 1's negative robustness result, the regularization-ablation contradiction, and the LayerMatchedMLP latency finding into the actual paper/report draft — currently only recorded in this log
 

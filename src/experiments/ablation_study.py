@@ -11,10 +11,12 @@ from src.compression.compression_pipeline import (
 from src.compression.topology_sharing import apply_topology_sharing
 
 
-def run_ablation(configs, X_train, y_train, X_test, y_test, epochs=50, num_classes=1):
+def run_ablation(configs, X_train, y_train, X_test, y_test, epochs=50, seeds=(42,), num_classes=1):
     """
     configs: list of dicts with keys h1, h2, branches, hidden_per_branch.
-    Trains one model per config and reports accuracy before/after compression.
+    Trains one model per config per seed and reports mean +/- std accuracy
+    before/after compression. Size is deterministic per config (doesn't
+    depend on trained weights), so it stays a plain scalar.
     """
     results = []
 
@@ -27,36 +29,49 @@ def run_ablation(configs, X_train, y_train, X_test, y_test, epochs=50, num_class
     if num_classes == 1:
         y_test = y_test.reshape(-1, 1)
 
+    def _stats(lst):
+        n = len(lst)
+        mean = float(sum(lst) / n)
+        std  = float(torch.tensor(lst).std().item()) if n > 1 else 0.0
+        return {"mean": mean, "std": std}
+
     for cfg in configs:
-        model_u = DendriticNetwork(
-            input_dim=X_train.shape[1],
-            hidden_neurons1=cfg["h1"],
-            hidden_neurons2=cfg["h2"],
-            branches=cfg["branches"],
-            hidden_per_branch=cfg["hidden_per_branch"],
-            num_classes=num_classes,
-        )
+        acc_u_list, acc_c_list = [], []
+        mse_u_list, mse_c_list = [], []
+        size_u = size_c = None
 
-        train(model_u, X_train, y_train, epochs=epochs, num_classes=num_classes,
-              verbose=True, label=f"h1={cfg['h1']} h2={cfg['h2']} br={cfg['branches']}")
-        acc_u = evaluate(model_u, X_test, y_test, num_classes=num_classes)
-        mse_u = mse_score(model_u, X_test, y_test) if num_classes == 1 else float("nan")
+        for seed in seeds:
+            torch.manual_seed(seed)
+            model_u = DendriticNetwork(
+                input_dim=X_train.shape[1],
+                hidden_neurons1=cfg["h1"],
+                hidden_neurons2=cfg["h2"],
+                branches=cfg["branches"],
+                hidden_per_branch=cfg["hidden_per_branch"],
+                num_classes=num_classes,
+            )
 
-        compressed = compress_model(model_u)
-        size_c = compressed_size_bytes(compressed)
+            train(model_u, X_train, y_train, epochs=epochs, num_classes=num_classes,
+                  verbose=True, label=f"h1={cfg['h1']} h2={cfg['h2']} br={cfg['branches']} seed={seed}")
+            acc_u_list.append(evaluate(model_u, X_test, y_test, num_classes=num_classes))
+            mse_u_list.append(mse_score(model_u, X_test, y_test) if num_classes == 1 else float("nan"))
+            if size_u is None:
+                size_u = model_u.size_bytes()
 
-        decompress_model(compressed, model_u)
-        acc_c = evaluate(model_u, X_test, y_test, num_classes=num_classes)
-        mse_c = mse_score(model_u, X_test, y_test) if num_classes == 1 else float("nan")
+            compressed = compress_model(model_u)
+            if size_c is None:
+                size_c = compressed_size_bytes(compressed)
 
-        size_u = model_u.size_bytes()
+            decompress_model(compressed, model_u)
+            acc_c_list.append(evaluate(model_u, X_test, y_test, num_classes=num_classes))
+            mse_c_list.append(mse_score(model_u, X_test, y_test) if num_classes == 1 else float("nan"))
 
         results.append({
             "config": cfg,
-            "accuracy_uncompressed": acc_u,
-            "accuracy_compressed":   acc_c,
-            "mse_uncompressed":      mse_u,
-            "mse_compressed":        mse_c,
+            "accuracy_uncompressed": _stats(acc_u_list),
+            "accuracy_compressed":   _stats(acc_c_list),
+            "mse_uncompressed":      _stats(mse_u_list),
+            "mse_compressed":        _stats(mse_c_list),
             "size_uncompressed": size_u,
             "size_compressed": size_c,
         })

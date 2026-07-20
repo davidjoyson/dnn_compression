@@ -204,6 +204,19 @@ def generate_plots(results):
         except Exception as e:
             print(f"  Warning: Could not plot ablation: {e}")
 
+    if "Ablation Study" in results and isinstance(results["Ablation Study"], dict):
+        for dataset, configs in results["Ablation Study"].items():
+            try:
+                ablation_dict = {
+                    f"Config {i+1}": res["accuracy_uncompressed"]["mean"]
+                    for i, res in enumerate(configs)
+                }
+                if ablation_dict:
+                    plot_ablation(ablation_dict, filename=f"ablation_study_{dataset}.png")
+                    print(f"  Ablation plot saved ({dataset})")
+            except Exception as e:
+                print(f"  Warning: Could not plot ablation ({dataset}): {e}")
+
     for name, r in results.items():
         if isinstance(r, dict) and r.get("curve_data") is not None:
             try:
