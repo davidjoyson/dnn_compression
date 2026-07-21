@@ -1246,7 +1246,7 @@ Macro F1 is low (0.36 uncompressed) — DS2's natural test distribution is domin
 - [ ] **Fix EEG data leakage risk** — EEG uses random `train_test_split`, no subject/session grouping. HAR/HAPT are already correctly subject-split for reference
 - [ ] Add balanced accuracy + per-class precision/recall/specificity (only macro F1 + confusion matrix exist today)
 - [x] ~~Re-run architecture-size ablation (`run_ablation`, 3 model-size configs) at multi-seed~~ — done 2026-07-20 (3 seeds × 4 datasets); **finding: tiny configs (2 branches) are barely trainable (std up to 0.38), and Snowflake compression genuinely costs -3.2pp on ECG at the smallest scale — "lossless" holds from medium size up, not universally**
-- [ ] Stop describing quantization as "lossless" in README/framing — TOST equivalence in downstream accuracy is not the same claim as lossless compression
+- [x] ~~Stop describing quantization as "lossless" in README/framing~~ — done 2026-07-20 ("lossless" → "near-lossless"/"no statistically significant accuracy loss", added architecture-size-floor caveat pointing to the experiment log)
 - [ ] Write up Point 1's negative robustness result, the regularization-ablation contradiction, and the architecture-size floor effect into the actual paper/report draft — currently only recorded in this log
 
 **Explicitly not being pursued:** real power/energy draw per inference (needs INA219 or similar hardware, not acquired — user has decided not to pursue this).

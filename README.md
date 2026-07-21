@@ -1,8 +1,8 @@
 # DNN Compression — Dendritic Network with Int8 Quantization
 
-A research project exploring lossless compression of biologically-inspired dendritic neural networks on real-world tabular/time-series classification tasks.
+A research project exploring near-lossless compression of biologically-inspired dendritic neural networks on real-world tabular/time-series classification tasks.
 
-**Core finding:** Per-layer int8 quantization (Snowflake) achieves **~4× compression with zero accuracy loss** across 4 datasets. TOST equivalence testing (n=10 seeds, ±2% margin) confirms **27/28 method–dataset pairs are statistically equivalent** — the sole exception being dynamic int8 on EEG (−2.4%).
+**Core finding:** Per-layer int8 quantization (Snowflake) achieves **~4× compression with no statistically significant accuracy loss** across 4 datasets, at the model sizes used in the main experiments. TOST equivalence testing (n=10 seeds, ±2% margin) confirms **27/28 method–dataset pairs are statistically equivalent** — the sole exception being dynamic int8 on EEG (−2.4%). This is a statistical-equivalence claim, not a guarantee of zero information loss: the architecture-size ablation found a real accuracy drop under compression at the smallest model sizes tested (see `docs/experiment_log.md`, 2026-07-20 entry).
 
 ---
 
@@ -10,7 +10,7 @@ A research project exploring lossless compression of biologically-inspired dendr
 
 Neural networks deployed on edge devices (wearables, microcontrollers) are constrained by memory. Standard compression methods (pruning, global quantization) degrade accuracy, especially on small models (<200k params). This project asks:
 
-> Can a biologically-inspired dendritic architecture be compressed 4× with no accuracy loss, outperforming standard quantization baselines?
+> Can a biologically-inspired dendritic architecture be compressed 4× with no statistically significant accuracy loss, outperforming standard quantization baselines?
 
 The dendritic network's "snowflake" property — parallel branches each learning distinct feature subspaces — is hypothesised to be especially compatible with per-layer quantization, since each branch's weight distribution is narrow and independently calibrated.
 
