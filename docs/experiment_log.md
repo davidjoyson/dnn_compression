@@ -1230,7 +1230,6 @@ Macro F1 is low (0.36 uncompressed) — DS2's natural test distribution is domin
 - [x] ~~Add fast single-method testing tool to avoid full retraining on every iteration~~ — done 2026-07-17 (`1f2077a`, `test_method.py`)
 - [x] ~~Diagnose and fix Pi power supply throttling affecting all latency benchmarks~~ — done 2026-07-17 (~2× uniform speedup after PSU fix)
 - [ ] Add Snowflake+Static to `plot_cross_dataset.py`/`plot_pareto.py`'s fixed method set (currently only in per-dataset plots)
-- [ ] Investigate TFLite Micro port for true microcontroller deployment (ESP32 / Arduino Nano 33 BLE Sense) — current Pi benchmarks validate ARM Linux, not MCU-class hardware
 - [x] ~~Fold `benchmark_pi_output/` corrected (post-PSU-fix) results into README's edge-deployment claims~~ — done 2026-07-20 (new "Edge Deployment" section)
 - [x] ~~Get SSH access to the Pi and re-run corrected-PSU benchmarks (batch=-1 and batch=1)~~ — done 2026-07-18
 - [x] ~~Run sustained-load thermal test to check for throttling risk~~ — done 2026-07-18 (15 min, no throttling, steady-state 46.2°C)
@@ -1247,6 +1246,5 @@ Macro F1 is low (0.36 uncompressed) — DS2's natural test distribution is domin
 - [ ] Add balanced accuracy + per-class precision/recall/specificity (only macro F1 + confusion matrix exist today)
 - [x] ~~Re-run architecture-size ablation (`run_ablation`, 3 model-size configs) at multi-seed~~ — done 2026-07-20 (3 seeds × 4 datasets); **finding: tiny configs (2 branches) are barely trainable (std up to 0.38), and Snowflake compression genuinely costs -3.2pp on ECG at the smallest scale — "lossless" holds from medium size up, not universally**
 - [x] ~~Stop describing quantization as "lossless" in README/framing~~ — done 2026-07-20 ("lossless" → "near-lossless"/"no statistically significant accuracy loss", added architecture-size-floor caveat pointing to the experiment log)
-- [ ] Write up Point 1's negative robustness result, the regularization-ablation contradiction, and the architecture-size floor effect into the actual paper/report draft — currently only recorded in this log
 
-**Explicitly not being pursued:** real power/energy draw per inference (needs INA219 or similar hardware, not acquired — user has decided not to pursue this).
+**Explicitly not being pursued:** real power/energy draw per inference (needs INA219 or similar hardware, not acquired); TFLite Micro / MCU-class deployment (ESP32, Arduino Nano 33 BLE Sense); writing the findings up into a paper/report draft — user has decided not to pursue these.
