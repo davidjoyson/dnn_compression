@@ -25,7 +25,7 @@ from src.compression.compression_pipeline import (
     compress_model_mixed,
     mixed_model_size_bytes,
 )
-from src.analysis.branch_diversity import compute_branch_diversity
+from src.analysis.branch_diversity import compute_branch_diversity, layer_matched_control_spread
 from src.analysis.output_precision import output_divergence
 from src.analysis.tost import ci_95, tost_paired
 
@@ -152,6 +152,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     curve_data = None
     n_params = None
     branch_diversity = None
+    branch_diversity_control = None
     output_precision = None
     model_float = None
 
@@ -429,6 +430,8 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             n_params_lm = sum(p.numel() for p in lm.parameters())
         train(lm, X_train, y_train, epochs=epochs, num_classes=num_classes, batch_size=batch_size,
               verbose=True, label=f"LayerMatchedMLP seed={seed}")
+        if branch_diversity_control is None:
+            branch_diversity_control = layer_matched_control_spread(lm)
         lm_acc_u_list.append(evaluate(lm, X_test, y_test, num_classes=num_classes))
         lm_f1_u_list.append(f1_eval(lm, X_test, y_test, num_classes=num_classes))
         if size_lm_u is None:
@@ -610,6 +613,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         "class_names":      class_names,
         "weight_dist":      weight_dist,
         "branch_diversity": branch_diversity,
+        "branch_diversity_control": branch_diversity_control,
         "output_precision": output_precision,
         "curve_data":       curve_data,
         "per_seed": {

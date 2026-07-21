@@ -4,20 +4,25 @@ from .save_utils import save_fig
 from .style import apply_style, PALETTE
 
 
-def plot_branch_diversity(diversity_data, title="", filename="branch_diversity.png"):
+def plot_branch_diversity(diversity_data, title="", filename="branch_diversity.png", control_spread=None):
     """
-    Three-panel figure:
+    Figure panels:
     - Weight cosine similarity heatmap
     - Activation correlation heatmap
     - Per-branch quantization error bar chart
+    - (if control_spread given) Dendritic per-branch weight std vs the
+      LayerMatchedMLP control's per-row weight std -- direct test of the
+      "branches learn narrow distributions" claim.
     """
     apply_style()
 
     weight_sim = diversity_data.get("weight_similarity")
     act_corr   = diversity_data.get("activation_correlation")
     quant_err  = diversity_data.get("quant_error_per_branch")
+    spread     = diversity_data.get("weight_spread")
 
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4))
+    n_panels = 4 if (spread is not None and control_spread is not None) else 3
+    fig, axes = plt.subplots(1, n_panels, figsize=(13 if n_panels == 3 else 17, 4))
 
     # --- Weight cosine similarity ---
     ax = axes[0]
@@ -65,6 +70,23 @@ def plot_branch_diversity(diversity_data, title="", filename="branch_diversity.p
             ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
                     f"{v:.2e}", ha="center", va="bottom", fontsize=7)
     ax.set_title("Per-Branch\nQuantization Error (MSE)")
+
+    # --- Branch weight std vs LayerMatchedMLP control (narrow-distribution claim) ---
+    if n_panels == 4:
+        ax = axes[3]
+        n = len(spread["std"])
+        x = np.arange(n)
+        width = 0.35
+        ax.bar(x - width / 2, spread["std"], width, label="Dendritic branch",
+               color=PALETTE[0], edgecolor="white", linewidth=0.5)
+        ax.bar(x + width / 2, control_spread["std"], width, label="LayerMatchedMLP row",
+               color=PALETTE[1], edgecolor="white", linewidth=0.5)
+        ax.set_xticks(x)
+        ax.set_xticklabels([f"B{i}" for i in x], fontsize=8)
+        ax.set_xlabel("Branch")
+        ax.set_ylabel("Weight Std")
+        ax.set_title("Weight Std: Dendritic Branch\nvs Layer-Matched Control Row")
+        ax.legend(fontsize=7)
 
     if title:
         fig.suptitle(title, fontsize=13, fontweight="bold", y=1.02)

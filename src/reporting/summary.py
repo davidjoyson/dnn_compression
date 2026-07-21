@@ -254,6 +254,25 @@ def print_summary(results, timings):
                       + (f"  ->  {stats_c['balanced_accuracy_supported']:.4f} (Snowflake)" if stats_c else ""))
                 print(f"  Macro F1 (supported)      : {stats_u['macro_f1_supported']:.4f}"
                       + (f"  ->  {stats_c['macro_f1_supported']:.4f} (Snowflake)" if stats_c else ""))
+        bd = r.get("branch_diversity")
+        bd_ctrl = r.get("branch_diversity_control")
+        if bd is not None:
+            spread = bd.get("weight_spread")
+            sim = bd.get("weight_similarity")
+            qerr = bd.get("quant_error_per_branch")
+            sat = bd.get("saturation_rate_per_branch")
+            if spread is not None:
+                mean_std = sum(spread["std"]) / len(spread["std"])
+                print(f"  Branch Weight Std (mean over {len(spread['std'])} branches): {mean_std:.4f}"
+                      + (f"  vs LayerMatchedMLP control: {sum(bd_ctrl['std']) / len(bd_ctrl['std']):.4f}" if bd_ctrl else ""))
+            if sim is not None:
+                n = len(sim)
+                off_diag = [sim[i][j] for i in range(n) for j in range(n) if i != j]
+                print(f"  Branch Weight Similarity (mean off-diagonal cosine): {sum(off_diag) / len(off_diag):.4f}")
+            if qerr is not None:
+                print(f"  Branch Quant Error (mean MSE over branches): {sum(qerr) / len(qerr):.6f}")
+            if sat is not None:
+                print(f"  Branch Saturation Rate (mean over branches): {sum(sat) / len(sat):.4f}")
         if not math.isnan(mse_u):
             print(f"  Uncompressed MSE : {mse_u:.4f} +/- {std_mse_u:.4f}")
             print(f"  Compressed MSE   : {mse_c:.4f} +/- {std_mse_c:.4f}")

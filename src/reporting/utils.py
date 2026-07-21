@@ -87,6 +87,8 @@ def store_simple(results, timings, name, out, elapsed):
         "conf_matrix":     out.get("conf_matrix"),
         "class_names":     out.get("class_names"),
         "weight_dist":     out.get("weight_dist"),
+        "branch_diversity":         out.get("branch_diversity"),
+        "branch_diversity_control": out.get("branch_diversity_control"),
         "inference_time_uncompressed_ms": out.get("inference_time_uncompressed_ms"),
         "inference_time_compressed_ms":   out.get("inference_time_compressed_ms"),
         "inference_time_dynamic_ms":      out.get("inference_time_dynamic_ms"),

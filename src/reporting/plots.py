@@ -300,7 +300,8 @@ def generate_plots(results):
         if r.get("branch_diversity") is not None:
             try:
                 plot_branch_diversity(r["branch_diversity"], title=name,
-                                      filename=f"{slug}_branch_diversity.png")
+                                      filename=f"{slug}_branch_diversity.png",
+                                      control_spread=r.get("branch_diversity_control"))
                 print(f"  {name} branch diversity saved")
             except Exception as e:
                 print(f"  Warning: Could not plot branch diversity for {name}: {e}")
