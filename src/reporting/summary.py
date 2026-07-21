@@ -242,9 +242,18 @@ def print_summary(results, timings):
             stats_c = per_class_stats_from_cm(cm_c) if cm_c is not None else None
             print(f"  Balanced Acc     : {stats_u['balanced_accuracy']:.4f}"
                   + (f"  ->  {stats_c['balanced_accuracy']:.4f} (Snowflake)" if stats_c else ""))
-            print(f"  Per-Class (uncompressed) precision / recall / specificity:")
+            print(f"  Macro F1 (all)   : {stats_u['macro_f1']:.4f}"
+                  + (f"  ->  {stats_c['macro_f1']:.4f} (Snowflake)" if stats_c else ""))
+            print(f"  Per-Class (uncompressed) precision / recall / specificity / support:")
             for i, cname in enumerate(names):
-                print(f"    {cname:<20s}: {stats_u['precision'][i]:.3f} / {stats_u['recall'][i]:.3f} / {stats_u['specificity'][i]:.3f}")
+                print(f"    {cname:<20s}: {stats_u['precision'][i]:.3f} / {stats_u['recall'][i]:.3f} / {stats_u['specificity'][i]:.3f} / n={stats_u['support'][i]}")
+            if stats_u["excluded_classes"]:
+                excl_names = ", ".join(f"{names[c]} (n={stats_u['support'][c]})" for c in stats_u["excluded_classes"])
+                print(f"  Excluded from *_supported (too few test examples, <20): {excl_names}")
+                print(f"  Balanced Acc (supported)  : {stats_u['balanced_accuracy_supported']:.4f}"
+                      + (f"  ->  {stats_c['balanced_accuracy_supported']:.4f} (Snowflake)" if stats_c else ""))
+                print(f"  Macro F1 (supported)      : {stats_u['macro_f1_supported']:.4f}"
+                      + (f"  ->  {stats_c['macro_f1_supported']:.4f} (Snowflake)" if stats_c else ""))
         if not math.isnan(mse_u):
             print(f"  Uncompressed MSE : {mse_u:.4f} +/- {std_mse_u:.4f}")
             print(f"  Compressed MSE   : {mse_c:.4f} +/- {std_mse_c:.4f}")

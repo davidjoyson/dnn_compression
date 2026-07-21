@@ -64,26 +64,47 @@ def confusion_matrix_eval(model, X, y, num_classes=1, device=None):
     return confusion_matrix(labels, preds)
 
 
-def per_class_stats_from_cm(cm):
-    """One-vs-rest precision/recall/specificity per class, plus balanced accuracy
-    (mean per-class recall), computed directly from an existing confusion matrix
-    -- no re-evaluation needed."""
+def per_class_stats_from_cm(cm, min_support=20):
+    """One-vs-rest precision/recall/specificity/F1 per class, plus balanced
+    accuracy (mean per-class recall), computed directly from an existing
+    confusion matrix -- no re-evaluation needed.
+
+    min_support: classes with fewer than this many true (test-set) examples
+    are excluded from the "_supported" macro averages -- with only a
+    handful of real examples, a class's F1/recall is mostly noise, and
+    including it just distorts the macro average. The full, all-classes
+    averages are still returned for reference."""
     cm = np.asarray(cm, dtype=float)
     total = cm.sum()
-    precision, recall, specificity = [], [], []
+    precision, recall, specificity, f1, support = [], [], [], [], []
     for c in range(cm.shape[0]):
         tp = cm[c, c]
         fp = cm[:, c].sum() - tp
         fn = cm[c, :].sum() - tp
         tn = total - tp - fp - fn
-        precision.append(float(tp / (tp + fp)) if (tp + fp) > 0 else 0.0)
-        recall.append(float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0)
+        p = float(tp / (tp + fp)) if (tp + fp) > 0 else 0.0
+        r = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
+        precision.append(p)
+        recall.append(r)
         specificity.append(float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0)
+        f1.append(2 * p * r / (p + r) if (p + r) > 0 else 0.0)
+        support.append(int(cm[c, :].sum()))
+
+    supported = [c for c in range(cm.shape[0]) if support[c] >= min_support]
+    excluded = [c for c in range(cm.shape[0]) if support[c] < min_support]
+
     return {
         "precision": precision,
         "recall": recall,
         "specificity": specificity,
+        "f1": f1,
+        "support": support,
         "balanced_accuracy": float(np.mean(recall)),
+        "macro_f1": float(np.mean(f1)),
+        "supported_classes": supported,
+        "excluded_classes": excluded,
+        "balanced_accuracy_supported": float(np.mean([recall[c] for c in supported])) if supported else None,
+        "macro_f1_supported": float(np.mean([f1[c] for c in supported])) if supported else None,
     }
 
 
