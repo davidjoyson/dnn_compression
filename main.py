@@ -12,12 +12,10 @@ from src.experiments.ablation_study import (
 from src.experiments.har_experiment import run_har
 from src.experiments.ecg_experiment import run_ecg
 from src.experiments.ecg_patient_experiment import run_ecg_patient
-from src.experiments.eeg_experiment import run_eeg
 from src.experiments.hapt_experiment import run_hapt
 
 from src.loaders.load_ecg import load_ecg
 from src.loaders.load_har import load_har
-from src.loaders.load_eeg import load_eeg
 from src.loaders.load_hapt import load_hapt
 
 from src.models.dendritic_network import DendriticNetwork
@@ -38,8 +36,8 @@ from src.reporting import (
 SEEDS  = (42, 0, 7, 1, 2, 3, 4, 5, 6, 8)
 EPOCHS = 50
 
-ALL_EXPERIMENTS = ["har", "ecg", "ecg_patient", "eeg", "hapt", "ablation", "component", "regularization"]
-_DEFAULT_EXPERIMENTS = ["har", "ecg", "hapt"]  # eeg dropped: unfixable data leakage, see docs/experiment_log.md 2026-07-21
+ALL_EXPERIMENTS = ["har", "ecg", "ecg_patient", "hapt", "ablation", "component", "regularization"]
+_DEFAULT_EXPERIMENTS = ["har", "ecg", "hapt"]
 
 class _Tee:
     """Mirror a stream to both the terminal and a log file."""
@@ -127,7 +125,6 @@ _EXP_TABLE = {
     "har":         ("UCI HAR (Wearable Sensors)",             "UCI HAR",           run_har),
     "ecg":         ("ECG Heartbeat (MIT-BIH, 5-class)",       "ECG Heartbeat",     run_ecg),
     "ecg_patient": ("ECG Heartbeat (Patient-Split, 5-class)", "ECG Patient-Split", run_ecg_patient),
-    "eeg":         ("EEG Brainwave (Emotions, 3-class)",      "EEG Brainwave",     run_eeg),
     "hapt":        ("HAPT (UCI Smartphone, 12-class)",        "HAPT",              run_hapt),
 }
 
@@ -148,12 +145,12 @@ def main():
     )
     parser.add_argument(
         "--exp", nargs="+", choices=ALL_EXPERIMENTS, default=_DEFAULT_EXPERIMENTS, metavar="EXP",
-        help="Experiments to run (default: har ecg hapt; eeg available via --exp eeg but not run by default -- unfixable data leakage, see docs/experiment_log.md).\nChoices: " + ", ".join(ALL_EXPERIMENTS),
+        help="Experiments to run (default: har ecg hapt).\nChoices: " + ", ".join(ALL_EXPERIMENTS),
     )
     parser.add_argument("--epochs", type=int, default=EPOCHS,
                         help=f"Training epochs per experiment (default: {EPOCHS})")
     parser.add_argument("--fine-tune-epochs", type=int, default=3,
-                        help="Post-quantization fine-tuning epochs for har/ecg/eeg (default: 3)")
+                        help="Post-quantization fine-tuning epochs for har/ecg (default: 3)")
     parser.add_argument("--seeds", type=int, nargs="+", default=list(SEEDS),
                         help=f"Random seeds to average over (default: {list(SEEDS)})")
     parser.add_argument("--arch", action="store_true", help="Print model architectures and exit")
@@ -212,7 +209,6 @@ def main():
     _model_dirs = {
         "har":  os.path.join(_models_root, "har"),
         "ecg":  os.path.join(_models_root, "ecg"),
-        "eeg":  os.path.join(_models_root, "eeg"),
         "hapt": os.path.join(_models_root, "hapt"),
     }
 

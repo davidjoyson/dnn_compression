@@ -4,7 +4,7 @@ A research project exploring near-lossless compression of biologically-inspired 
 
 **Core finding:** Per-layer int8 quantization (Snowflake) achieves **~4× compression with no statistically significant accuracy loss** across 3 datasets (HAR, ECG, HAPT), at the model sizes used in the main experiments. TOST equivalence testing (n=10 seeds, ±2% margin) confirms **all 24/24 method–dataset pairs are statistically equivalent**. This is a statistical-equivalence claim, not a guarantee of zero information loss: the architecture-size ablation found a real accuracy drop under compression at the smallest model sizes tested (see `docs/experiment_log.md`, 2026-07-20 entry).
 
-> **Note:** A 4th dataset (EEG brainwave emotions) was dropped 2026-07-21 after investigation confirmed unfixable patient/session-level data leakage in the source data — no subject ID or recoverable session structure exists in the published CSV, and the raw per-subject recordings needed to rebuild the split aren't publicly available for this task. See `docs/experiment_log.md` for the investigation. The loader/experiment code is kept for reference (`--exp eeg`) but its results are not part of this project's supported claims.
+> **Note:** A 4th dataset (EEG brainwave emotions) was dropped 2026-07-21 after investigation confirmed unfixable patient/session-level data leakage in the source data — no subject ID or recoverable session structure exists in the published CSV, and the raw per-subject recordings needed to rebuild the split aren't publicly available for this task. See `docs/experiment_log.md` for the investigation. The loader (`src/loaders/load_eeg.py`) and experiment code are kept in the repo for reference but are no longer wired into the experiment CLI.
 
 ---
 
@@ -108,14 +108,14 @@ dnn_compression/
 │   ├── loaders/
 │   │   ├── load_har.py                  # UCI HAR (wearable sensors, 6-class)
 │   │   ├── load_ecg.py                  # MIT-BIH ECG heartbeat (5-class)
-│   │   ├── load_eeg.py                  # EEG brainwave emotions (3-class)
+│   │   ├── load_eeg.py                  # EEG brainwave emotions (3-class) — unused, kept for reference
 │   │   └── load_hapt.py                 # UCI HAPT smartphone IMU (12-class)
 │   │
 │   ├── experiments/
 │   │   ├── base_experiment.py           # Shared training + eval loop for all datasets
 │   │   ├── har_experiment.py
 │   │   ├── ecg_experiment.py
-│   │   ├── eeg_experiment.py
+│   │   ├── eeg_experiment.py            # unused, kept for reference (see leakage note above)
 │   │   ├── hapt_experiment.py
 │   │   └── ablation_study.py            # Architecture + component ablations
 │   │
@@ -167,7 +167,7 @@ pip install torch scikit-learn pandas numpy matplotlib torchinfo tqdm
 | UCI HAR | [UCI ML Repository](https://archive.ics.uci.edu/dataset/240/human+activity+recognition+using+smartphones) | Manual — place in `data/har/` |
 | ECG Heartbeat | Kaggle `shayanfazeli/heartbeat` | Via Kaggle CLI on first load |
 | UCI HAPT | [UCI ML Repository](https://archive.ics.uci.edu/dataset/341/smartphone+based+recognition+of+human+activities+and+postural+transitions) | Manual — place in `data/hapt/` |
-| EEG Brainwave *(not run by default)* | Kaggle `birdy654/eeg-brainwave-dataset-feeling-emotions` | Via Kaggle CLI on first load; only needed for `--exp eeg` |
+| EEG Brainwave *(unused, kept for reference)* | Kaggle `birdy654/eeg-brainwave-dataset-feeling-emotions` | Not wired into the experiment CLI — see leakage note above |
 
 For Kaggle datasets, set up `~/.kaggle/kaggle.json` with your credentials. `.npy` cache files are auto-generated on first load alongside the raw data.
 
@@ -202,7 +202,7 @@ python main.py --replot outputs/run_A outputs/run_B
 
 | Flag | Default | Description |
 |---|---|---|
-| `--exp` | `har ecg hapt` | Experiments to run (`eeg` available but not run by default — see leakage note above) |
+| `--exp` | `har ecg hapt` | Experiments to run |
 | `--epochs` | `50` | Training epochs per experiment |
 | `--seeds` | `42 0 7 1 2 3 4 5 6 8` | Random seeds (results averaged) |
 | `--fine-tune-epochs` | `3` | Post-quantization fine-tuning epochs |
