@@ -1370,4 +1370,29 @@ Branch saturation rate is 0.0000 across all 3 (test-time activations never excee
 
 ---
 
-**Explicitly not being pursued:** real power/energy draw per inference (needs INA219 or similar hardware, not acquired); TFLite Micro / MCU-class deployment (ESP32, Arduino Nano 33 BLE Sense); writing the findings up into a paper/report draft — user has decided not to pursue these.
+## 2026-07-21 — ECG F1 Investigation Closed: Focal/Tversky Loss Also Don't Help
+
+**Commits:** *(pending)*
+
+### Summary
+Final pass on the ECG patient-split F1 problem before closing the investigation. Added `FocalLoss` and `TverskyLoss` (`src/training/losses.py`) and a standalone comparison script (`test_loss_functions.py`, not wired into the main pipeline) to test whether either beats plain CrossEntropy — neither did.
+
+### Result — 1 Seed, 50 Epochs, Dendritic Only
+
+| Loss | Acc | F1 (all) | Balanced Acc | F1 (supported, excl. Unknown) |
+|---|---|---|---|---|
+| CrossEntropy (baseline) | 0.8901 | **0.3717** | **0.3723** | **0.4646** |
+| Focal (γ=2.0) | 0.8872 | 0.3703 | 0.3681 | 0.4629 |
+| Tversky (α=0.7, β=0.3) | 0.9351 | 0.3576 | 0.3481 | 0.4470 |
+
+Focal loss landed essentially flat with baseline (marginally worse on every metric). Tversky loss — tuned to penalize false positives, targeting the exact failure mode class-weighting hit — backfired: it reached the highest raw accuracy (0.935) by collapsing to **zero precision and recall on Supraventricular, Fusion, and Unknown entirely**. Penalizing false positives that heavily taught the model that never predicting the rare classes is the safest strategy, which is worse than the problem it was meant to fix.
+
+### Key Findings
+
+1. **Four independent imbalance-handling techniques have now failed to improve ECG's F1**: oversampling by duplication (2026-07-20), class-weighted loss (2026-07-21, reverted), focal loss, and Tversky loss (this entry). That consistency across genuinely different mechanisms is itself the finding — it points at the data-scarcity root cause (8 real Unknown examples, 415 real Fusion examples in DS1) rather than a fixable training-methodology gap. No reweighting or re-margining scheme can manufacture information that was never collected.
+2. **Investigation closed.** The only remaining path that could plausibly move this number is acquiring more real minority-class data (not available) or a structurally different approach (e.g. hierarchical Normal-vs-Abnormal classification, not attempted) — noted as a possible future direction, not pursued now. `min_support`-excluded macro F1/balanced accuracy (2026-07-21 entry above) remains the honest way to report this task's performance going forward.
+3. `src/training/losses.py` and `test_loss_functions.py` are kept in the repo (committed, not wired into the main pipeline) — reusable if this is ever revisited, but not part of any active experiment.
+
+---
+
+**Explicitly not being pursued:** real power/energy draw per inference (needs INA219 or similar hardware, not acquired); TFLite Micro / MCU-class deployment (ESP32, Arduino Nano 33 BLE Sense); writing the findings up into a paper/report draft; further ECG rare-class F1 improvement attempts (investigation closed 2026-07-21 after 4 independent techniques failed) — user has decided not to pursue these.
