@@ -2,7 +2,9 @@
 
 A research project exploring near-lossless compression of biologically-inspired dendritic neural networks on real-world tabular/time-series classification tasks.
 
-**Core finding:** Per-layer int8 quantization (Snowflake) achieves **~4× compression with no statistically significant accuracy loss** across 4 datasets, at the model sizes used in the main experiments. TOST equivalence testing (n=10 seeds, ±2% margin) confirms **27/28 method–dataset pairs are statistically equivalent** — the sole exception being dynamic int8 on EEG (−2.4%). This is a statistical-equivalence claim, not a guarantee of zero information loss: the architecture-size ablation found a real accuracy drop under compression at the smallest model sizes tested (see `docs/experiment_log.md`, 2026-07-20 entry).
+**Core finding:** Per-layer int8 quantization (Snowflake) achieves **~4× compression with no statistically significant accuracy loss** across 3 datasets (HAR, ECG, HAPT), at the model sizes used in the main experiments. TOST equivalence testing (n=10 seeds, ±2% margin) confirms **all 24/24 method–dataset pairs are statistically equivalent**. This is a statistical-equivalence claim, not a guarantee of zero information loss: the architecture-size ablation found a real accuracy drop under compression at the smallest model sizes tested (see `docs/experiment_log.md`, 2026-07-20 entry).
+
+> **Note:** A 4th dataset (EEG brainwave emotions) was dropped 2026-07-21 after investigation confirmed unfixable patient/session-level data leakage in the source data — no subject ID or recoverable session structure exists in the published CSV, and the raw per-subject recordings needed to rebuild the split aren't publicly available for this task. See `docs/experiment_log.md` for the investigation. The loader/experiment code is kept for reference (`--exp eeg`) but its results are not part of this project's supported claims.
 
 ---
 
@@ -58,10 +60,9 @@ All methods optionally followed by 3 epochs of post-quantization fine-tuning. Co
 |---|---|---|---|---|---|
 | UCI HAR | 6 | 94.12% ±0.48% | 94.16% ±0.45% | +0.04% | EQUIV |
 | ECG Heartbeat | 5 | 96.23% ±0.92% | **96.77% ±0.46%** | **+0.54%** | EQUIV |
-| EEG Brainwave | 3 | 97.85% ±0.18% | 97.78% ±0.23% | -0.07% | EQUIV |
 | HAPT | 12 | 92.22% ±0.57% | **92.50% ±0.47%** | **+0.28%** | EQUIV |
 
-Snowflake matches or beats uncompressed on all 4 datasets. TOST equivalence testing (±2% margin) confirms 27/28 method–dataset pairs are equivalent. The only failure is dynamic int8 on EEG (−2.41%, NOT EQUIV) — a known issue with dynamic quantization on larger models.
+Snowflake matches or beats uncompressed on all 3 datasets. TOST equivalence testing (±2% margin) confirms all 24/24 method–dataset pairs are equivalent.
 
 ---
 
@@ -73,7 +74,6 @@ Real single-sample (batch=1) inference latency on a Raspberry Pi 3 Model B (ARM 
 |---|---|---|---|---|
 | HAR  | 9.01 ms | 9.25 ms (0.97×) | 4.62 ms (**1.95×**) | 4.54 ms (**1.98×**) |
 | ECG  | 8.30 ms | 8.33 ms (1.00×) | 4.61 ms (**1.80×**) | 4.70 ms (**1.77×**) |
-| EEG  | 10.20 ms | 10.38 ms (0.98×) | 4.78 ms (**2.13×**) | 4.73 ms (**2.16×**) |
 | HAPT | 8.88 ms | 9.02 ms (0.99×) | 4.52 ms (**1.97×**) | 4.56 ms (**1.95×**) |
 
 **Snowflake gives no real speedup on hardware (~1.0×)** — it's weight-only quantization, so weights are dequantized back to float32 before every matmul; the storage savings (4×) don't translate to compute savings. **Static and Snowflake+Static run true INT8 arithmetic** and deliver a genuine ~1.8–2.2× latency reduction. This is a meaningful distinction the accuracy-only tables above don't capture: for actual edge latency, "true INT8 arithmetic" methods matter, not just int8 *storage*.
@@ -166,8 +166,8 @@ pip install torch scikit-learn pandas numpy matplotlib torchinfo tqdm
 |---|---|---|
 | UCI HAR | [UCI ML Repository](https://archive.ics.uci.edu/dataset/240/human+activity+recognition+using+smartphones) | Manual — place in `data/har/` |
 | ECG Heartbeat | Kaggle `shayanfazeli/heartbeat` | Via Kaggle CLI on first load |
-| EEG Brainwave | Kaggle `birdy654/eeg-brainwave-dataset-feeling-emotions` | Via Kaggle CLI on first load |
 | UCI HAPT | [UCI ML Repository](https://archive.ics.uci.edu/dataset/341/smartphone+based+recognition+of+human+activities+and+postural+transitions) | Manual — place in `data/hapt/` |
+| EEG Brainwave *(not run by default)* | Kaggle `birdy654/eeg-brainwave-dataset-feeling-emotions` | Via Kaggle CLI on first load; only needed for `--exp eeg` |
 
 For Kaggle datasets, set up `~/.kaggle/kaggle.json` with your credentials. `.npy` cache files are auto-generated on first load alongside the raw data.
 
@@ -176,7 +176,7 @@ For Kaggle datasets, set up `~/.kaggle/kaggle.json` with your credentials. `.npy
 ## Usage
 
 ```bash
-# Run all 4 datasets (default)
+# Run all 3 datasets (default)
 python main.py
 
 # Run specific experiments
@@ -202,7 +202,7 @@ python main.py --replot outputs/run_A outputs/run_B
 
 | Flag | Default | Description |
 |---|---|---|
-| `--exp` | `har ecg eeg hapt` | Experiments to run |
+| `--exp` | `har ecg hapt` | Experiments to run (`eeg` available but not run by default — see leakage note above) |
 | `--epochs` | `50` | Training epochs per experiment |
 | `--seeds` | `42 0 7 1 2 3 4 5 6 8` | Random seeds (results averaged) |
 | `--fine-tune-epochs` | `3` | Post-quantization fine-tuning epochs |

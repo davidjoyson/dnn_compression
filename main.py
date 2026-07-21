@@ -39,7 +39,7 @@ SEEDS  = (42, 0, 7, 1, 2, 3, 4, 5, 6, 8)
 EPOCHS = 50
 
 ALL_EXPERIMENTS = ["har", "ecg", "ecg_patient", "eeg", "hapt", "ablation", "component", "regularization"]
-_DEFAULT_EXPERIMENTS = ["har", "ecg", "eeg", "hapt"]
+_DEFAULT_EXPERIMENTS = ["har", "ecg", "hapt"]  # eeg dropped: unfixable data leakage, see docs/experiment_log.md 2026-07-21
 
 class _Tee:
     """Mirror a stream to both the terminal and a log file."""
@@ -67,7 +67,6 @@ _ABLATION_CONFIG = {"h1": 64, "h2": 32, "branches": 8, "hidden_per_branch": 8}
 _ABLATION_DATASETS = {
     "har":  (lambda: load_har(),  6),
     "ecg":  (lambda: load_ecg(),  5),
-    "eeg":  (lambda: load_eeg(),  3),
     "hapt": (lambda: load_hapt(), 12),
 }
 
@@ -149,7 +148,7 @@ def main():
     )
     parser.add_argument(
         "--exp", nargs="+", choices=ALL_EXPERIMENTS, default=_DEFAULT_EXPERIMENTS, metavar="EXP",
-        help="Experiments to run (default: har ecg eeg hapt).\nChoices: " + ", ".join(ALL_EXPERIMENTS),
+        help="Experiments to run (default: har ecg hapt; eeg available via --exp eeg but not run by default -- unfixable data leakage, see docs/experiment_log.md).\nChoices: " + ", ".join(ALL_EXPERIMENTS),
     )
     parser.add_argument("--epochs", type=int, default=EPOCHS,
                         help=f"Training epochs per experiment (default: {EPOCHS})")

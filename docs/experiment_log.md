@@ -1208,6 +1208,29 @@ Macro F1 is low (0.36 uncompressed) — DS2's natural test distribution is domin
 
 ---
 
+## 2026-07-21 — EEG Dropped: Leakage Confirmed Unfixable From Available Data
+
+**Commits:** *(pending)*
+
+### Summary
+Investigated whether EEG's leakage could be fixed the same way ECG's was (source raw per-subject data, split by subject). It can't, for reasons specific to this dataset — confirmed by reading the actual data and its source, not by assumption.
+
+### Investigation
+- `data/eeg/emotions.csv` (Kaggle `birdy654/eeg-brainwave-dataset-feeling-emotions`) has **no subject or session ID column** — only 2,548 statistical/FFT feature columns plus a label.
+- Checked whether row order preserved any temporal/session structure (a lighter fallback fix, e.g. a blocked/chronological split instead of subject IDs): it doesn't. Contiguous same-label run-lengths are almost all 1, meaning the file is already fully row-shuffled with no recoverable order.
+- Found the dataset's origin: Jordan Bird, EEG recorded from **2 subjects only** (positive/negative/neutral, 3 minutes per state, Muse headband), aggregated into overlapping-window statistical features with no ID retained.
+- Checked the author's companion feature-extraction repo (`jordan-bird/eeg-feature-generation`) for raw per-subject session files that could be reprocessed with subject labels intact. It does contain raw per-subject CSVs (`subjecta/b/c/d-*.csv`) — but for a **different, sibling Kaggle dataset** ("EEG brainwave dataset: mental state" — relaxed/concentrating/neutral, 4 subjects), not for "Feeling Emotions" (positive/negative/neutral, 2 subjects) used in this project. The raw data behind our actual EEG task isn't published anywhere found.
+
+### Decision
+With only 2 source subjects and no way to recover per-subject structure from the published data, a genuine subject-independent fix isn't feasible without acquiring or recording entirely new EEG data — out of proportion to what EEG contributes to this project. Discussed with the user; decided to **drop EEG from the default experiment set**. `load_eeg.py` and `eeg_experiment.py` are kept in the codebase (`--exp eeg` still works) but EEG results are no longer part of this project's supported claims. README, `main.py`'s default `--exp` list, and the ablation dataset set (`_ABLATION_DATASETS`) were updated accordingly; recomputed the TOST equivalence headline for the remaining 3 datasets (HAR/ECG/HAPT): **24/24 method–dataset pairs equivalent** (previously 27/28 across 4 datasets, with EEG's dynamic-int8 as the sole failure — that failure is now moot since EEG is out of scope).
+
+### Key Findings
+
+1. **Not every leakage problem has a fix from the data at hand** — ECG's was recoverable (raw PhysioNet database, real patient IDs, one download away); EEG's is not (no ID, no recoverable order, and the only available raw per-subject data is for a different task entirely). Worth distinguishing "found and fixed" from "found and un-fixable" rather than forcing a fix either way.
+2. **Project now reports 3 datasets (HAR, ECG, HAPT) as supported, cleanly-split results**, plus the separately-tracked ECG patient-split leakage-quantification finding. EEG code remains available for reference/curiosity but isn't part of any headline claim.
+
+---
+
 ## Next Steps
 
 - [x] ~~Commit today's session work~~ — done in `2177bd0`
@@ -1242,7 +1265,7 @@ Macro F1 is low (0.36 uncompressed) — DS2's natural test distribution is domin
 - [x] ~~Test the "quantization improves accuracy via regularization" claim against an actual regularization baseline~~ — done 2026-07-19 (`run_regularization_ablation`); **not confirmed — contradicted on ECG, where explicit regularization hurts while quantization helps**
 - [x] ~~Commit thermal_test.py + output_precision.py + LayerMatchedMLP/ablation/logging changes~~ — done 2026-07-19 (`d5a70b6`)
 - [x] ~~Fix ECG data leakage risk~~ — done 2026-07-20 (`load_ecg_patient_split.py`, DS1/DS2 patient-independent split from raw PhysioNet MIT-BIH); **finding: true leakage inflation is ~13pp (96.77% → 83.71%), Dendritic's edge over MLPBaseline/LayerMatchedMLP survives the fix**
-- [ ] **Fix EEG data leakage risk** — EEG uses random `train_test_split`, no subject/session grouping. HAR/HAPT are already correctly subject-split for reference
+- [x] ~~Fix EEG data leakage risk~~ — investigated 2026-07-21; confirmed unfixable from available data (no subject/session ID, no recoverable order, raw per-subject data publicly available only for a different sibling dataset). **Decision: dropped EEG from the default experiment set** rather than ship an unfixable leaky result
 - [x] ~~Add balanced accuracy + per-class precision/recall/specificity~~ — done 2026-07-21 (`per_class_stats_from_cm()` in `evaluate.py`, derived from the confusion matrix already collected — no new training/eval runs needed; printed in `summary.py`). Confirms the ECG patient-split finding: balanced accuracy is only 0.36 vs 0.837 raw accuracy, with near-zero recall on Fusion (0.023) and Unknown (0.000) classes
 - [x] ~~Re-run architecture-size ablation (`run_ablation`, 3 model-size configs) at multi-seed~~ — done 2026-07-20 (3 seeds × 4 datasets); **finding: tiny configs (2 branches) are barely trainable (std up to 0.38), and Snowflake compression genuinely costs -3.2pp on ECG at the smallest scale — "lossless" holds from medium size up, not universally**
 - [x] ~~Stop describing quantization as "lossless" in README/framing~~ — done 2026-07-20 ("lossless" → "near-lossless"/"no statistically significant accuracy loss", added architecture-size-floor caveat pointing to the experiment log)
