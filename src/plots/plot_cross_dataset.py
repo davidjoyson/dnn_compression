@@ -15,6 +15,7 @@ def plot_cross_dataset_summary(all_results, filename="cross_dataset_summary.png"
     methods = [
         ("Uncompressed",    "accuracy_uncompressed",        "std_uncompressed"),
         ("Snowflake (int8)","accuracy_compressed",          "std_compressed"),
+        ("Snowflake+Static (int8)", "accuracy_compressed_snowflake_static", "std_compressed_snowflake_static"),
         ("Global int8",     "accuracy_compressed_global",   "std_compressed_global"),
         ("Dynamic (int8)",  "accuracy_compressed_dynamic",  "std_compressed_dynamic"),
         ("MLP Baseline",    "accuracy_mlp_baseline",        "std_mlp_baseline"),

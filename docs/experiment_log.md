@@ -1229,7 +1229,7 @@ Macro F1 is low (0.36 uncompressed) — DS2's natural test distribution is domin
 - [x] ~~Wire Snowflake+Static into the main pipeline (was Pi-benchmark-only)~~ — done 2026-07-17 (`40fdcbd`)
 - [x] ~~Add fast single-method testing tool to avoid full retraining on every iteration~~ — done 2026-07-17 (`1f2077a`, `test_method.py`)
 - [x] ~~Diagnose and fix Pi power supply throttling affecting all latency benchmarks~~ — done 2026-07-17 (~2× uniform speedup after PSU fix)
-- [ ] Add Snowflake+Static to `plot_cross_dataset.py`/`plot_pareto.py`'s fixed method set (currently only in per-dataset plots)
+- [x] ~~Add Snowflake+Static to `plot_cross_dataset.py`/`plot_pareto.py`'s fixed method set~~ — done 2026-07-21
 - [x] ~~Fold `benchmark_pi_output/` corrected (post-PSU-fix) results into README's edge-deployment claims~~ — done 2026-07-20 (new "Edge Deployment" section)
 - [x] ~~Get SSH access to the Pi and re-run corrected-PSU benchmarks (batch=-1 and batch=1)~~ — done 2026-07-18
 - [x] ~~Run sustained-load thermal test to check for throttling risk~~ — done 2026-07-18 (15 min, no throttling, steady-state 46.2°C)

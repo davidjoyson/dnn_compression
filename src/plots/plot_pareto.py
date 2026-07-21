@@ -22,6 +22,7 @@ _DS_LABEL_OFFSETS = {
 _METHOD_KEYS = [
     ("Uncompressed",    "size_uncompressed",       "accuracy_uncompressed"),
     ("Snowflake (int8)","size_compressed",          "accuracy_compressed"),
+    ("Snowflake+Static (int8)", "size_compressed_snowflake_static", "accuracy_compressed_snowflake_static"),
     ("Global int8",     "size_compressed_global",   "accuracy_compressed_global"),
     ("Dynamic (int8)",  "size_compressed_dynamic",  "accuracy_compressed_dynamic"),
     ("MLP Baseline",    "size_mlp_uncompressed",    "accuracy_mlp_baseline"),
