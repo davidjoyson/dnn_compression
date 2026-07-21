@@ -14,7 +14,9 @@ Neural networks deployed on edge devices (wearables, microcontrollers) are const
 
 > Can a biologically-inspired dendritic architecture be compressed 4× with no statistically significant accuracy loss, outperforming standard quantization baselines?
 
-The dendritic network's "snowflake" property — parallel branches each learning distinct feature subspaces — is hypothesised to be especially compatible with per-layer quantization, since each branch's weight distribution is narrow and independently calibrated.
+The dendritic network's "snowflake" property — parallel branches each learning distinct feature subspaces — was the motivating hypothesis for compatibility with per-layer quantization, since each branch's weight distribution was expected to be narrow and independently calibrated.
+
+**This part of the claim is now quantitatively confirmed** (see `docs/experiment_log.md`, 2026-07-21 entry): across all 3 datasets, Dendritic's branches have consistently lower weight std (17–27%) than the equivalent rows of a structurally-matched non-branching control layer, and are weight-distinct from each other (near-zero inter-branch cosine similarity). However, this narrower/distinct branch structure does **not** translate into a measurable quantization-robustness advantage over parameter- or layer-matched MLPs (see Results below) — the branches are real and measurably narrow, but the anticipated downstream benefit doesn't show up in the compression numbers.
 
 ---
 

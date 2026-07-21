@@ -1341,4 +1341,33 @@ F1/balanced accuracy remain low on both datasets' rare classes regardless — th
 
 ---
 
+## 2026-07-21 — Branch Weight-Spread Metric: Quantitative Proof of the "Narrow Distribution" Claim
+
+**Commits:** `07304fa`
+
+### Summary
+Point 7 of the professor feedback asked for quantitative proof that branches learn "narrow, independently-calibrated" weight distributions — the existing `branch_diversity.py` measured inter-branch similarity, activation correlation, quantization error, and saturation rate, but never actually tested narrowness itself. Added `branch_weight_spread()` (per-branch weight std/range) and `layer_matched_control_spread()` — the same measurement applied to LayerMatchedMLP's `mid` layer, split by output row, as the structurally-equivalent control (same input width, same unit count, same position in the network, minus branching) — for a direct, apples-to-apples comparison.
+
+**Bug found and fixed along the way:** `branch_diversity` has been computed every run since 2026-07-19 but was never passed through `store_simple()` into the saved results dict — so the branch-diversity plot has silently never been generated once in this project's history (verified: zero `*branch_diversity*.png` files exist in any past output folder). Fixed by adding it to `store_simple`'s whitelist; `plot_branch_diversity.py` gained a 4th panel comparing per-branch weight std against the layer-matched control.
+
+### Full Run — 10 Seeds, `har`/`ecg`/`hapt` (`run_20260721_195301_har_ecg_hapt_epo50`)
+
+**Time: 1h14m8s** (HAR 10m55s / ECG 52m33s / HAPT 10m31s).
+
+| Dataset | Dendritic branch weight std | LayerMatchedMLP control std | Narrower by | Mean inter-branch cosine similarity |
+|---|---|---|---|---|
+| HAR | 0.1178 | 0.1448 | ~19% | 0.065 |
+| ECG | 0.1658 | 0.2008 | ~17% | 0.059 |
+| HAPT | 0.1282 | 0.1763 | ~27% | 0.003 |
+
+Branch saturation rate is 0.0000 across all 3 (test-time activations never exceed the calibration range).
+
+### Key Findings
+
+1. **The "branches learn narrow distributions" half of the snowflake-property claim is now confirmed with real numbers, consistently across all 3 datasets** — Dendritic's branches have measurably lower weight spread (17–27%) than the equivalent rows of a non-branching control with the same shape, and are near-uncorrelated with each other in weight space (cosine similarity ≈ 0). This is the first time this specific claim has been directly measured rather than asserted.
+2. **Narrowness does not translate into a quantization-robustness advantage** — this is a real, measurable structural property of the architecture, but it doesn't show up as better compression tolerance (Point 1/2's core claim remains unsupported: identical ~0.0026 mean accuracy-delta across Dendritic/MLPBaseline/LayerMatchedMLP, per the 2026-07-19 full-scale comparison). The branches are exactly as "snowflake-like" as hypothesised; that property just doesn't confer the anticipated compression benefit.
+3. **A previously-invisible bug is now fixed**: `branch_diversity` data existed in every run since 2026-07-19 but was silently dropped before reaching the plot/summary layer. All of this session's branch-diversity numbers (including the ones above) are the first ones ever actually surfaced from this analysis code.
+
+---
+
 **Explicitly not being pursued:** real power/energy draw per inference (needs INA219 or similar hardware, not acquired); TFLite Micro / MCU-class deployment (ESP32, Arduino Nano 33 BLE Sense); writing the findings up into a paper/report draft — user has decided not to pursue these.
