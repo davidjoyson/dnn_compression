@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 
 _DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -61,6 +62,29 @@ def confusion_matrix_eval(model, X, y, num_classes=1, device=None):
             preds = (model(X) > 0.5).float().cpu().numpy().ravel()
             labels = y.cpu().numpy().ravel()
     return confusion_matrix(labels, preds)
+
+
+def per_class_stats_from_cm(cm):
+    """One-vs-rest precision/recall/specificity per class, plus balanced accuracy
+    (mean per-class recall), computed directly from an existing confusion matrix
+    -- no re-evaluation needed."""
+    cm = np.asarray(cm, dtype=float)
+    total = cm.sum()
+    precision, recall, specificity = [], [], []
+    for c in range(cm.shape[0]):
+        tp = cm[c, c]
+        fp = cm[:, c].sum() - tp
+        fn = cm[c, :].sum() - tp
+        tn = total - tp - fp - fn
+        precision.append(float(tp / (tp + fp)) if (tp + fp) > 0 else 0.0)
+        recall.append(float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0)
+        specificity.append(float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0)
+    return {
+        "precision": precision,
+        "recall": recall,
+        "specificity": specificity,
+        "balanced_accuracy": float(np.mean(recall)),
+    }
 
 
 def predict_proba_multiclass(model, X, device=None):

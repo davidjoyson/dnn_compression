@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 
 from .utils import to_float
+from src.training.evaluate import per_class_stats_from_cm
 
 
 def make_run_dir(label=None):
@@ -233,6 +234,17 @@ def print_summary(results, timings):
             print(f"  MLP Baseline F1  : {f1_mlp:.4f}")
         if not math.isnan(f1_mlp_c):
             print(f"  MLP Compressed F1: {f1_mlp_c:.4f}")
+        cm = r.get("conf_matrix") or {}
+        cm_u, cm_c = cm.get("uncompressed"), cm.get("compressed")
+        if cm_u is not None:
+            names = r.get("class_names") or [f"Class {i}" for i in range(len(cm_u))]
+            stats_u = per_class_stats_from_cm(cm_u)
+            stats_c = per_class_stats_from_cm(cm_c) if cm_c is not None else None
+            print(f"  Balanced Acc     : {stats_u['balanced_accuracy']:.4f}"
+                  + (f"  ->  {stats_c['balanced_accuracy']:.4f} (Snowflake)" if stats_c else ""))
+            print(f"  Per-Class (uncompressed) precision / recall / specificity:")
+            for i, cname in enumerate(names):
+                print(f"    {cname:<20s}: {stats_u['precision'][i]:.3f} / {stats_u['recall'][i]:.3f} / {stats_u['specificity'][i]:.3f}")
         if not math.isnan(mse_u):
             print(f"  Uncompressed MSE : {mse_u:.4f} +/- {std_mse_u:.4f}")
             print(f"  Compressed MSE   : {mse_c:.4f} +/- {std_mse_c:.4f}")

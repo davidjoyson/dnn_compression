@@ -1243,7 +1243,7 @@ Macro F1 is low (0.36 uncompressed) — DS2's natural test distribution is domin
 - [x] ~~Commit thermal_test.py + output_precision.py + LayerMatchedMLP/ablation/logging changes~~ — done 2026-07-19 (`d5a70b6`)
 - [x] ~~Fix ECG data leakage risk~~ — done 2026-07-20 (`load_ecg_patient_split.py`, DS1/DS2 patient-independent split from raw PhysioNet MIT-BIH); **finding: true leakage inflation is ~13pp (96.77% → 83.71%), Dendritic's edge over MLPBaseline/LayerMatchedMLP survives the fix**
 - [ ] **Fix EEG data leakage risk** — EEG uses random `train_test_split`, no subject/session grouping. HAR/HAPT are already correctly subject-split for reference
-- [ ] Add balanced accuracy + per-class precision/recall/specificity (only macro F1 + confusion matrix exist today)
+- [x] ~~Add balanced accuracy + per-class precision/recall/specificity~~ — done 2026-07-21 (`per_class_stats_from_cm()` in `evaluate.py`, derived from the confusion matrix already collected — no new training/eval runs needed; printed in `summary.py`). Confirms the ECG patient-split finding: balanced accuracy is only 0.36 vs 0.837 raw accuracy, with near-zero recall on Fusion (0.023) and Unknown (0.000) classes
 - [x] ~~Re-run architecture-size ablation (`run_ablation`, 3 model-size configs) at multi-seed~~ — done 2026-07-20 (3 seeds × 4 datasets); **finding: tiny configs (2 branches) are barely trainable (std up to 0.38), and Snowflake compression genuinely costs -3.2pp on ECG at the smallest scale — "lossless" holds from medium size up, not universally**
 - [x] ~~Stop describing quantization as "lossless" in README/framing~~ — done 2026-07-20 ("lossless" → "near-lossless"/"no statistically significant accuracy loss", added architecture-size-floor caveat pointing to the experiment log)
 
