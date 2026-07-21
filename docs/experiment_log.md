@@ -1395,4 +1395,21 @@ Focal loss landed essentially flat with baseline (marginally worse on every metr
 
 ---
 
+## 2026-07-21 — Pi Benchmark Plots: 2 New Findings From Data That Already Existed
+
+**Commits:** *(pending)*
+
+### Summary
+`benchmark_pi.py` and `thermal_test.py` had zero visualization since they were written — only raw CSVs (`benchmark_pi_output/*.csv`) and the hand-built README table (4 of the 10 benchmarked methods). Added 5 plots (`src/plots/plot_pi_benchmark.py`, driven by `plot_pi_benchmark.py`) covering all 10 methods: latency, memory, per-method speedup (one panel per dataset), a batch=-1-vs-batch=1 comparison, and a real-hardware compression-vs-speedup Pareto chart.
+
+### Key Findings
+
+1. **The "true-int8 uses more memory" pattern I stated from a single HAR row doesn't generalize.** Plotting all 3 datasets: HAR does show it (Static/Snowflake+Static ~485MB vs Float32/Snowflake ~385MB), but ECG shows the *opposite* (Static/Snowflake+Static ~390-430MB vs Float32/Snowflake ~608-619MB), HAPT shows it again in the original direction. Dataset-dependent, not a consistent tradeoff — a claim I should not have generalized from one example, caught by actually plotting the full data instead of eyeballing a single CSV row.
+2. **Dynamic quantization's speedup verdict flips between batch modes.** At batch=-1 (full-throughput) it's *slower* than Float32 across all 3 datasets (0.44–0.60×) — quantizing activations at runtime has real overhead that dominates at high throughput. At batch=1 (single-sample) it's *faster* (1.27–1.40×) — per-call overhead matters less when there's only one call. This was sitting in the raw CSV the whole time but invisible until plotted side-by-side; it's real deployment-relevant guidance (batch size determines whether Dynamic helps or hurts) that the README's batch=1-only table couldn't have shown.
+3. **The Pareto view confirms the core edge-deployment story visually**: the true-int8 cluster (QAT/Snowflake+Static/Static W+A) sits at ~1.8–2.0× real speedup around 4× compression; Snowflake/Global/Per-channel/int4 cluster at ~1.0× speedup regardless of compression ratio (up to 8× for int4) — compression ratio and real hardware speedup are decoupled, exactly as the prose already claimed, now visible in one chart instead of requiring the reader to infer it from a table.
+
+README updated with a short pointer to the plots and the two new findings (memory tradeoff isn't universal, Dynamic's batch-dependence).
+
+---
+
 **Explicitly not being pursued:** real power/energy draw per inference (needs INA219 or similar hardware, not acquired); TFLite Micro / MCU-class deployment (ESP32, Arduino Nano 33 BLE Sense); writing the findings up into a paper/report draft; further ECG rare-class F1 improvement attempts (investigation closed 2026-07-21 after 4 independent techniques failed) — user has decided not to pursue these.
