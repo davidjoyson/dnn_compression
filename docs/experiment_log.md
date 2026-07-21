@@ -1304,4 +1304,41 @@ TOST headline for the 3 supported datasets recomputed: **21/24 method–dataset 
 
 - [x] ~~Investigate ways to improve ECG patient-split F1 (0.36 macro F1 despite balanced training)~~ — done 2026-07-21. Tried class-weighted loss (inverse-frequency, replacing oversampling) instead of duplicating minority-class beats: raw accuracy dropped 10pp (83.71%→73.57%), balanced accuracy improved modestly (0.4191→0.4449), but macro F1 stayed flat (0.3595→0.3508) — recall on rare classes improved a lot (Fusion 0.023→0.137, Unknown 0.000→0.286) but precision collapsed just as much (Fusion precision 0.008), netting out even. **Reverted** (not committed) — not an improvement. Root cause instead: DS1 train has only **8 Unknown examples total** (`[45845, 943, 3788, 415, 8]` per class) — no rebalancing technique can generalize from that. Added `min_support` exclusion to `per_class_stats_from_cm()` (`evaluate.py`): classes with <20 test examples are excluded from a separate `macro_f1_supported`/`balanced_accuracy_supported` pair of metrics (full-5-class numbers still reported alongside). Excluding Unknown (n=7): macro F1 0.34→**0.43**, balanced accuracy 0.36→**0.45** — an honest fix (removing a class with no learnable signal from the average), not a training change. Next candidate if further improvement is wanted: focal loss (targets the precision-collapse failure mode class-weighting hit) or hierarchical Normal-vs-Abnormal classification (standard approach in the arrhythmia literature for this imbalance pattern) — not yet tried.
 
+---
+
+## 2026-07-21 — ECG/HAPT: Unbalanced (`balance=False`) Made the Default
+
+**Commits:** *(pending)*
+
+### Summary
+Following the reverted class-weighted-loss experiment, tried the simpler variant: just remove oversampling (`balance=False`) with no compensating technique at all, for both ECG and HAPT. Ran the full pipeline at proper scale — 10 seeds for `har`/`ecg`/`hapt`, 3 seeds for `ablation`/`component`/`regularization` (run separately and merged via `--replot` to avoid the cost of 10-seed ablations) — and it gave a *more* consistent result than the oversampled-balanced version, so it's now the default.
+
+### Full Run — 10 Seeds (main) + 3 Seeds (ablations), ~2h58m total (`run_20260721_164302_har_ecg_hapt_epo50` + `run_20260721_181142_ablation_component_regularization_epo50`, merged into `run_20260721_194345_replot`)
+
+| Dataset | Uncompressed | Snowflake | Delta | TOST |
+|---|---|---|---|---|
+| HAR (unaffected — no `balance` param) | 94.12% ±0.48% | 94.16% ±0.45% | +0.04% | EQUIV |
+| ECG (patient-split, unbalanced) | 87.92% ±1.86% | 88.38% ±1.48% | +0.46% | EQUIV |
+| HAPT (unbalanced) | 92.51% ±0.74% | 92.77% ±0.56% | +0.26% | EQUIV |
+
+**All 24/24 method–dataset pairs are TOST-equivalent** — cleaner than every other variant tried on ECG: the oversampled-balanced split had 3 NOT EQUIV failures (Snowflake, Global, QAT, all compression *improving* accuracy past the margin), and the class-weighted-loss variant (reverted) was never even tested for TOST since it was abandoned on F1 grounds first.
+
+F1/balanced accuracy remain low on both datasets' rare classes regardless — this run doesn't fix that separate problem (still investigating candidates: focal loss, hierarchical classification):
+- ECG: F1 0.3703, Balanced Acc 0.3884 (0.4855 excluding Unknown, n=7)
+- HAPT: F1 0.8191, Balanced Acc 0.8296
+
+### Changes
+- `src/experiments/ecg_patient_experiment.py`: `load_ecg_patient_split(balance=False)`.
+- `src/experiments/hapt_experiment.py`: `load_hapt(balance=False)`.
+- `main.py`'s `_ABLATION_DATASETS`: both switched to `balance=False` too, for consistency with the main experiments (previously would have silently kept training ablations on oversampled data while the main pipeline used unbalanced — the same kind of inconsistency caught and fixed for ECG's leaky/patient-split loaders earlier this session).
+- Two-run workflow used for cost control: full 10-seed run for `har ecg hapt`, separate 3-seed run for `ablation component regularization` (matches every prior ablation run's seed count), merged into one combined output folder via `python main.py --replot <run_A> <run_B>` — this merge path already existed in the codebase, no new code needed.
+
+### Key Findings
+
+1. **Unbalanced training beats oversampled training on every axis tested for ECG**: cleaner TOST result (24/24 vs 21/24), no worse accuracy, and it doesn't cost the extra ~7× training time oversampling caused (unbalanced DS1 train is 50,999 rows vs 362,355 balanced/oversampled — this is also why the 10-seed run finished in ~1h13m instead of the historical ~6h+ for the old leaky-balanced ECG).
+2. **Oversampling by duplication was net-negative here** — it didn't improve F1/balanced accuracy (root cause is data scarcity, not class-count imbalance — see the reverted class-weighting entry above) and it introduced TOST failures that don't exist without it. Simpler was better.
+3. **This is now the default** for `python main.py` (no flags needed) and for `--exp ablation`/`component`/`regularization`. README updated with the new numbers and an explanatory note on why `balance=False` was chosen.
+
+---
+
 **Explicitly not being pursued:** real power/energy draw per inference (needs INA219 or similar hardware, not acquired); TFLite Micro / MCU-class deployment (ESP32, Arduino Nano 33 BLE Sense); writing the findings up into a paper/report draft — user has decided not to pursue these.

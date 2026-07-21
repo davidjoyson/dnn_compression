@@ -2,7 +2,7 @@
 
 A research project exploring near-lossless compression of biologically-inspired dendritic neural networks on real-world tabular/time-series classification tasks.
 
-**Core finding:** Per-layer int8 quantization (Snowflake) achieves **~4× compression with no statistically significant accuracy loss on HAR and HAPT**, and a more complicated picture on ECG (see below), across 3 datasets (HAR, ECG, HAPT). TOST equivalence testing (n=10 seeds, ±2% margin) confirms **21/24 method–dataset pairs are statistically equivalent** — all 3 failures are on ECG's patient-independent split, and in each case compression *improves* accuracy beyond the ±2% margin rather than degrading it. This is a statistical-equivalence claim, not a guarantee of zero information loss: the architecture-size ablation found a real accuracy drop under compression at the smallest model sizes tested (see `docs/experiment_log.md`, 2026-07-20 entry).
+**Core finding:** Per-layer int8 quantization (Snowflake) achieves **~4× compression with no statistically significant accuracy loss** across all 3 datasets (HAR, ECG, HAPT). TOST equivalence testing (n=10 seeds, ±2% margin) confirms **all 24/24 method–dataset pairs are statistically equivalent**. This is a statistical-equivalence claim, not a guarantee of zero information loss: the architecture-size ablation found a real accuracy drop under compression at the smallest model sizes tested (see `docs/experiment_log.md`, 2026-07-20 entry).
 
 > **Note:** A 4th dataset (EEG brainwave emotions) was dropped 2026-07-21 after investigation confirmed unfixable patient/session-level data leakage in the source data — no subject ID or recoverable session structure exists in the published CSV, and the raw per-subject recordings needed to rebuild the split aren't publicly available for this task. See `docs/experiment_log.md` for the investigation. The loader (`src/loaders/load_eeg.py`) and experiment code are kept in the repo for reference but are no longer wired into the experiment CLI.
 
@@ -59,12 +59,14 @@ All methods optionally followed by 3 epochs of post-quantization fine-tuning. Co
 | Dataset | Classes | Uncompressed | Snowflake (4×) | Delta | TOST (n=10) |
 |---|---|---|---|---|---|
 | UCI HAR | 6 | 94.12% ±0.48% | 94.16% ±0.45% | +0.04% | EQUIV |
-| ECG Heartbeat (patient-split) | 5 | 83.71% ±2.21% | **86.21% ±1.04%** | **+2.50%** | NOT EQUIV |
-| HAPT | 12 | 92.22% ±0.57% | **92.50% ±0.47%** | **+0.28%** | EQUIV |
+| ECG Heartbeat (patient-split) | 5 | 87.92% ±1.86% | **88.38% ±1.48%** | **+0.46%** | EQUIV |
+| HAPT | 12 | 92.51% ±0.74% | **92.77% ±0.56%** | **+0.26%** | EQUIV |
 
-Snowflake matches or beats uncompressed on all 3 datasets. TOST equivalence testing (±2% margin) confirms 21/24 method–dataset pairs are equivalent; the 3 failures (Snowflake, Global int8, QAT — all on ECG) are compression *improving* accuracy past the margin, not degrading it.
+Snowflake matches or beats uncompressed on all 3 datasets. TOST equivalence testing (±2% margin) confirms all 24/24 method–dataset pairs are equivalent.
 
-**ECG uses the patient-independent (DS1/DS2) split**, not the original Kaggle random split. The original split was found to leak patient data between train/test (no patient ID, known to split by individual beat), inflating accuracy by ~13 percentage points (96.77% → 83.71%). See `docs/experiment_log.md`, 2026-07-20 entry, for the full investigation. The old `load_ecg.py` (leaky) loader is kept in the repo for reference but is no longer used by the default pipeline.
+**ECG uses the patient-independent (DS1/DS2) split**, not the original Kaggle random split. The original split was found to leak patient data between train/test (no patient ID, known to split by individual beat), inflating accuracy by ~13 percentage points relative to the (still-leaky) balanced-training version. See `docs/experiment_log.md`, 2026-07-20 and 2026-07-21 entries, for the full investigation. The old `load_ecg.py` (leaky) loader is kept in the repo for reference but is no longer used by the default pipeline.
+
+**ECG and HAPT both train on their natural, unbalanced class distribution** (`balance=False`) rather than oversampling minority classes to match the majority — oversampling by duplication was tried and gave a *less* consistent equivalence result (3 of 8 ECG methods failed TOST) without actually improving F1/balanced accuracy (duplicating a handful of real minority-class examples doesn't add information, it just lets the model overfit to those few repeats). Macro F1 and balanced accuracy remain low on both datasets' rare classes regardless of this choice — see `docs/experiment_log.md` for the full investigation of that separate problem.
 
 ---
 

@@ -8,7 +8,7 @@ def run_ecg_patient(epochs=50, seeds=(42,), fine_tune_epochs=3, model_dir=None):
     """Same task/classes as run_ecg, but split by patient (DS1/DS2) instead of
     by beat -- checks how much the standard ECG split's accuracy is inflated
     by patient-level data leakage."""
-    data = load_ecg_patient_split()
+    data = load_ecg_patient_split(balance=False)
     return run_experiment(
         get_data=lambda seed: data,
         num_classes=5,

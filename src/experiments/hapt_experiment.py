@@ -9,7 +9,7 @@ _CLASS_NAMES = [
 
 
 def run_hapt(epochs=50, seeds=(42,), fine_tune_epochs=3, model_dir=None):
-    data = load_hapt()
+    data = load_hapt(balance=False)
     return run_experiment(
         get_data=lambda seed: data,
         num_classes=12,
