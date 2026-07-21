@@ -1229,7 +1229,37 @@ With only 2 source subjects and no way to recover per-subject structure from the
 ### Key Findings
 
 1. **Not every leakage problem has a fix from the data at hand** — ECG's was recoverable (raw PhysioNet database, real patient IDs, one download away); EEG's is not (no ID, no recoverable order, and the only available raw per-subject data is for a different task entirely). Worth distinguishing "found and fixed" from "found and un-fixable" rather than forcing a fix either way.
-2. **Project now reports 3 datasets (HAR, ECG, HAPT) as supported, cleanly-split results**, plus the separately-tracked ECG patient-split leakage-quantification finding. EEG code remains available for reference/curiosity but isn't part of any headline claim.
+2. **Project now reports 3 datasets (HAR, ECG, HAPT) as supported, cleanly-split results.** EEG code remains available for reference/curiosity but isn't part of any headline claim.
+
+---
+
+## 2026-07-21 — ECG Patient-Split Promoted to Default (Replaces Leaky Split Everywhere)
+
+**Commits:** *(pending)*
+
+### Summary
+The 2026-07-20 patient-split fix (`load_ecg_patient_split.py`, `ecg_patient_experiment.py`) was added as a separate, opt-in `ecg_patient` experiment — the original leaky `ecg` experiment (Kaggle random split, `load_ecg.py`) stayed the default and the one reflected in README's headline numbers. That inconsistency was flagged (same class of problem as EEG, but the leaky version was still shipping as the supported result) and, per user request, fixed by making the patient-split loader **the** ECG experiment everywhere, not a side option.
+
+### Changes
+- `main.py`: `_EXP_TABLE["ecg"]` now points at `run_ecg_patient` (banner "ECG Heartbeat (Patient-Split, 5-class)"); the separate `"ecg_patient"` key was removed (folded into `"ecg"`) from `ALL_EXPERIMENTS` and `_EXP_TABLE`. `_ABLATION_DATASETS["ecg"]` now loads via `load_ecg_patient_split()`, so future `ablation`/`component`/`regularization` reruns use the corrected split too — **note: the already-published ablation results (2026-07-19/07-20 entries) were generated against the old leaky ECG split and were not rerun**; treat their ECG columns as using the pre-fix data.
+- `benchmark_pi.py`, `test_method.py`, `run_qat.py`: swapped `load_ecg` → `load_ecg_patient_split` for consistency across all entry points, not just the main pipeline.
+- `load_ecg.py` and `ecg_experiment.py` are kept in the repo, unimported by any active entry point, for reference — same treatment as EEG's dropped code.
+- Verified with a 1-epoch smoke test (`--exp ecg --epochs 1`) that the full pipeline (Dendritic + MLPBaseline + LayerMatchedMLP, all 8 compression methods) runs end-to-end against the new default loader without error.
+
+### README updated with real numbers
+Swapping the default changes the project's headline claim, not just a label — using the correct real 10-seed numbers from the 2026-07-20 `ecg_patient` run:
+
+| | Uncompressed | Snowflake (4×) | Delta | TOST |
+|---|---|---|---|---|
+| ECG (was: leaky split) | 96.23% | 96.77% | +0.54% | EQUIV |
+| ECG (now: patient-split) | 83.71% ±2.21% | 86.21% ±1.04% | +2.50% | **NOT EQUIV** |
+
+TOST headline for the 3 supported datasets recomputed: **21/24 method–dataset pairs equivalent** (down from the previous 24/24, itself already down from 27/28 pre-EEG-drop). All 3 new failures (Snowflake, Global int8, QAT) are on ECG, and in every case compression *improves* accuracy beyond the ±2% margin rather than degrading it — not evidence of harm, but not "equivalent" under TOST's symmetric test either.
+
+### Key Findings
+
+1. **The project's flagship "no accuracy loss" claim no longer holds unconditionally** — it holds cleanly on HAR and HAPT, but ECG's patient-independent split shows Snowflake/Global/QAT all failing equivalence (in the direction of *over*-correcting accuracy, not losing it). This is the single most consequential correction made in this leakage-investigation arc — it changes what the README's core sentence can honestly claim.
+2. **Consistency matters as much as correctness** — having a "fixed" experiment exist as a side option while the leaky one stays default is the same failure mode as shipping a known-wrong result, just with plausible deniability. Worth checking for this pattern anywhere else a fix was added without also being wired in as the default.
 
 ---
 

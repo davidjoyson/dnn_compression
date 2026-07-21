@@ -2,7 +2,7 @@
 
 A research project exploring near-lossless compression of biologically-inspired dendritic neural networks on real-world tabular/time-series classification tasks.
 
-**Core finding:** Per-layer int8 quantization (Snowflake) achieves **~4× compression with no statistically significant accuracy loss** across 3 datasets (HAR, ECG, HAPT), at the model sizes used in the main experiments. TOST equivalence testing (n=10 seeds, ±2% margin) confirms **all 24/24 method–dataset pairs are statistically equivalent**. This is a statistical-equivalence claim, not a guarantee of zero information loss: the architecture-size ablation found a real accuracy drop under compression at the smallest model sizes tested (see `docs/experiment_log.md`, 2026-07-20 entry).
+**Core finding:** Per-layer int8 quantization (Snowflake) achieves **~4× compression with no statistically significant accuracy loss on HAR and HAPT**, and a more complicated picture on ECG (see below), across 3 datasets (HAR, ECG, HAPT). TOST equivalence testing (n=10 seeds, ±2% margin) confirms **21/24 method–dataset pairs are statistically equivalent** — all 3 failures are on ECG's patient-independent split, and in each case compression *improves* accuracy beyond the ±2% margin rather than degrading it. This is a statistical-equivalence claim, not a guarantee of zero information loss: the architecture-size ablation found a real accuracy drop under compression at the smallest model sizes tested (see `docs/experiment_log.md`, 2026-07-20 entry).
 
 > **Note:** A 4th dataset (EEG brainwave emotions) was dropped 2026-07-21 after investigation confirmed unfixable patient/session-level data leakage in the source data — no subject ID or recoverable session structure exists in the published CSV, and the raw per-subject recordings needed to rebuild the split aren't publicly available for this task. See `docs/experiment_log.md` for the investigation. The loader (`src/loaders/load_eeg.py`) and experiment code are kept in the repo for reference but are no longer wired into the experiment CLI.
 
@@ -59,10 +59,12 @@ All methods optionally followed by 3 epochs of post-quantization fine-tuning. Co
 | Dataset | Classes | Uncompressed | Snowflake (4×) | Delta | TOST (n=10) |
 |---|---|---|---|---|---|
 | UCI HAR | 6 | 94.12% ±0.48% | 94.16% ±0.45% | +0.04% | EQUIV |
-| ECG Heartbeat | 5 | 96.23% ±0.92% | **96.77% ±0.46%** | **+0.54%** | EQUIV |
+| ECG Heartbeat (patient-split) | 5 | 83.71% ±2.21% | **86.21% ±1.04%** | **+2.50%** | NOT EQUIV |
 | HAPT | 12 | 92.22% ±0.57% | **92.50% ±0.47%** | **+0.28%** | EQUIV |
 
-Snowflake matches or beats uncompressed on all 3 datasets. TOST equivalence testing (±2% margin) confirms all 24/24 method–dataset pairs are equivalent.
+Snowflake matches or beats uncompressed on all 3 datasets. TOST equivalence testing (±2% margin) confirms 21/24 method–dataset pairs are equivalent; the 3 failures (Snowflake, Global int8, QAT — all on ECG) are compression *improving* accuracy past the margin, not degrading it.
+
+**ECG uses the patient-independent (DS1/DS2) split**, not the original Kaggle random split. The original split was found to leak patient data between train/test (no patient ID, known to split by individual beat), inflating accuracy by ~13 percentage points (96.77% → 83.71%). See `docs/experiment_log.md`, 2026-07-20 entry, for the full investigation. The old `load_ecg.py` (leaky) loader is kept in the repo for reference but is no longer used by the default pipeline.
 
 ---
 
@@ -81,6 +83,8 @@ Real single-sample (batch=1) inference latency on a Raspberry Pi 3 Model B (ARM 
 **Thermal:** a 15-minute sustained-load test (`thermal_test.py`, Snowflake+Static on ECG, no active cooling) held **229 inf/s with zero throughput degradation**; temperature reached a steady-state **46.2°C by the 5-minute mark** and stayed flat — comfortably below the ~80°C throttle threshold.
 
 **Not yet measured:** real power/energy draw per inference — the Pi 3 has no built-in power ADC (`vcgencmd pmic_read_adc` is Pi 4/5-only), so this needs external hardware (e.g. INA219) not currently available. Temperature was used as a free thermal-risk proxy instead. These numbers also validate an ARM Linux SBC, not bare-metal microcontroller-class hardware (e.g. TFLite Micro on ESP32) — a different deployment target not yet attempted.
+
+*(ECG latency was measured pre-leakage-fix, but remains valid — inference latency depends only on model architecture/shape, which is unchanged by the patient-split fix, not on the training data itself.)*
 
 ---
 
@@ -107,14 +111,16 @@ dnn_compression/
 │   │
 │   ├── loaders/
 │   │   ├── load_har.py                  # UCI HAR (wearable sensors, 6-class)
-│   │   ├── load_ecg.py                  # MIT-BIH ECG heartbeat (5-class)
+│   │   ├── load_ecg.py                  # MIT-BIH ECG, Kaggle random split — unused, kept for reference (leaky, see note above)
+│   │   ├── load_ecg_patient_split.py    # MIT-BIH ECG, patient-independent DS1/DS2 split (5-class) — active loader
 │   │   ├── load_eeg.py                  # EEG brainwave emotions (3-class) — unused, kept for reference
 │   │   └── load_hapt.py                 # UCI HAPT smartphone IMU (12-class)
 │   │
 │   ├── experiments/
 │   │   ├── base_experiment.py           # Shared training + eval loop for all datasets
 │   │   ├── har_experiment.py
-│   │   ├── ecg_experiment.py
+│   │   ├── ecg_experiment.py            # unused, kept for reference (leaky split, see note above)
+│   │   ├── ecg_patient_experiment.py    # active ECG experiment (patient-independent split)
 │   │   ├── eeg_experiment.py            # unused, kept for reference (see leakage note above)
 │   │   ├── hapt_experiment.py
 │   │   └── ablation_study.py            # Architecture + component ablations

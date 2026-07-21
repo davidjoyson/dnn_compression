@@ -8,7 +8,7 @@ import torch
 
 from src.models.dendritic_network import DendriticNetwork
 from src.loaders.load_har  import load_har
-from src.loaders.load_ecg  import load_ecg
+from src.loaders.load_ecg_patient_split import load_ecg_patient_split
 from src.loaders.load_eeg  import load_eeg
 from src.loaders.load_hapt import load_hapt
 from src.compression.compression_pipeline import compress_model_qat, static_model_size_bytes
@@ -16,7 +16,7 @@ from src.training.evaluate import evaluate
 
 DATASETS = {
     "har":  (load_har,  561,  6),
-    "ecg":  (load_ecg,  187,  5),
+    "ecg":  (load_ecg_patient_split, 187, 5),
     "eeg":  (load_eeg,  2548, 3),
     "hapt": (load_hapt, 561,  12),
 }

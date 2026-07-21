@@ -10,7 +10,7 @@ import argparse
 import torch
 
 from src.loaders.load_har import load_har
-from src.loaders.load_ecg import load_ecg
+from src.loaders.load_ecg_patient_split import load_ecg_patient_split
 from src.loaders.load_eeg import load_eeg
 from src.loaders.load_hapt import load_hapt
 from src.models.dendritic_network import DendriticNetwork
@@ -27,7 +27,7 @@ from src.compression.compression_pipeline import (
     compress_model_int4, decompress_model_int4, int4_size_bytes,
 )
 
-LOADERS = {"har": load_har, "ecg": load_ecg, "eeg": load_eeg, "hapt": load_hapt}
+LOADERS = {"har": load_har, "ecg": load_ecg_patient_split, "eeg": load_eeg, "hapt": load_hapt}
 NUM_CLASSES = {"har": 6, "ecg": 5, "eeg": 3, "hapt": 12}
 METHODS = ["snowflake", "global", "dynamic", "static", "snowflake_static",
            "perchan", "qat", "mixed", "int4"]

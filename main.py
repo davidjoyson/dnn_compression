@@ -10,11 +10,10 @@ from src.experiments.ablation_study import (
     run_ablation, run_compression_component_ablation, run_regularization_ablation,
 )
 from src.experiments.har_experiment import run_har
-from src.experiments.ecg_experiment import run_ecg
 from src.experiments.ecg_patient_experiment import run_ecg_patient
 from src.experiments.hapt_experiment import run_hapt
 
-from src.loaders.load_ecg import load_ecg
+from src.loaders.load_ecg_patient_split import load_ecg_patient_split
 from src.loaders.load_har import load_har
 from src.loaders.load_hapt import load_hapt
 
@@ -36,7 +35,7 @@ from src.reporting import (
 SEEDS  = (42, 0, 7, 1, 2, 3, 4, 5, 6, 8)
 EPOCHS = 50
 
-ALL_EXPERIMENTS = ["har", "ecg", "ecg_patient", "hapt", "ablation", "component", "regularization"]
+ALL_EXPERIMENTS = ["har", "ecg", "hapt", "ablation", "component", "regularization"]
 _DEFAULT_EXPERIMENTS = ["har", "ecg", "hapt"]
 
 class _Tee:
@@ -64,7 +63,7 @@ _ABLATION_CONFIG = {"h1": 64, "h2": 32, "branches": 8, "hidden_per_branch": 8}
 
 _ABLATION_DATASETS = {
     "har":  (lambda: load_har(),  6),
-    "ecg":  (lambda: load_ecg(),  5),
+    "ecg":  (lambda: load_ecg_patient_split(), 5),
     "hapt": (lambda: load_hapt(), 12),
 }
 
@@ -122,10 +121,9 @@ def _run_regularization(results, timings, epochs, seeds):
 
 
 _EXP_TABLE = {
-    "har":         ("UCI HAR (Wearable Sensors)",             "UCI HAR",           run_har),
-    "ecg":         ("ECG Heartbeat (MIT-BIH, 5-class)",       "ECG Heartbeat",     run_ecg),
-    "ecg_patient": ("ECG Heartbeat (Patient-Split, 5-class)", "ECG Patient-Split", run_ecg_patient),
-    "hapt":        ("HAPT (UCI Smartphone, 12-class)",        "HAPT",              run_hapt),
+    "har":  ("UCI HAR (Wearable Sensors)",                    "UCI HAR",       run_har),
+    "ecg":  ("ECG Heartbeat (Patient-Split, 5-class)",        "ECG Heartbeat", run_ecg_patient),
+    "hapt": ("HAPT (UCI Smartphone, 12-class)",               "HAPT",          run_hapt),
 }
 
 _ABLATION_REGISTRY = {
