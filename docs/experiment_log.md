@@ -1412,4 +1412,30 @@ README updated with a short pointer to the plots and the two new findings (memor
 
 ---
 
-**Explicitly not being pursued:** real power/energy draw per inference (needs INA219 or similar hardware, not acquired); TFLite Micro / MCU-class deployment (ESP32, Arduino Nano 33 BLE Sense); writing the findings up into a paper/report draft; further ECG rare-class F1 improvement attempts (investigation closed 2026-07-21 after 4 independent techniques failed) — user has decided not to pursue these.
+## 2026-07-22 — Full Run Reconfirmed; Combined Cross-Dataset Plots; ECG Ablation Masking Finding
+
+**Commits:** *(pending)*
+
+### Summary
+Re-ran the full experiment suite (10 seeds `har`/`ecg`/`hapt` + 3 seeds `ablation`/`component`/`regularization`) to reconfirm the 2026-07-21 numbers are reproducible, then rebuilt the plotting layer so every metric that was previously split into one file per dataset (accuracy, F1, model size, architecture-size ablation) now also renders as a single combined chart across HAR/ECG/HAPT, matching the pattern `component_ablation_all.png`/`regularization_ablation_all.png` already used. While reviewing the new combined ablation chart, found a real (if unsurprising in hindsight) artifact: ECG's architecture-size ablation looks flat where HAR/HAPT show a sharp capacity cliff, purely because of how raw accuracy behaves on imbalanced data.
+
+### Full Run — 10 Seeds (main) + 3 Seeds (ablations), 2h31m total (`run_20260722_090502_har_ecg_hapt_epo50` + `run_20260722_101441_ablation_component_regularization_epo50`, merged into `run_20260722_141752_replot`)
+
+Numbers reproduced exactly against the 2026-07-21 run (same seeds, same `balance=False` config, deterministic): HAR 94.12%→94.16%, ECG 87.92%→88.38%, HAPT 92.51%→92.77%, all EQUIV. No regressions from the intervening plotting-only changes.
+
+### Changes
+- **Combined cross-dataset charts added**: `plot_cross_dataset_summary` (accuracy) generalized to discover all 10 compression methods dynamically instead of a hardcoded 6-method list; new `plot_cross_dataset_f1` and `plot_compression_by_dataset` added on the same pattern (`src/plots/plot_cross_dataset.py`, `src/plots/plot_compression.py`). `plot_ablation_combined` (`src/plots/plot_component_ablation.py`) generalized to accept a custom condition order/labels so it could be reused for the architecture-size ablation (`h1=16/32/64`), not just component/regularization ablation.
+- **Redundant per-dataset files removed** for the four metrics that now have a combined chart (`{dataset}_accuracy.png`, `{dataset}_f1.png`, `{dataset}_compression.png`, `ablation_study_{dataset}.png`) — `src/reporting/plots.py` shrank by ~150 lines removing the dict-building loops these needed.
+- **All 8 cross-dataset charts moved into `figures/combined/`**: `cross_dataset_summary.png`, `cross_dataset_f1.png`, `cross_dataset_compression.png`, `ablation_study_all.png`, `component_ablation_all.png`, `regularization_ablation_all.png`, `pareto_compression.png`, `inference_time.png`, `edge_profile.png` (the last three already were cross-dataset, single-file — just relocated for consistency). `save_utils.fig_path()` now creates nested subdirectories on demand, so filenames can include a subfolder prefix.
+- Legend placement on the new grouped-bar charts moved below the plot (`bbox_to_anchor`, multi-column, no frame) — the old `loc="lower right"` legend overlapped ECG's bars once all 10 methods were shown instead of 6.
+- `METHOD_COLORS` (`src/plots/style.py`) extended with fixed colors for Static/Per-channel/QAT/Mixed/int4 — previously only 7 of 11 methods had a fixed color and the rest fell back to palette-cycling, which isn't stable across charts with different method subsets.
+
+### Key Findings
+
+1. **ECG's architecture-size ablation was masking the same capacity failure HAR/HAPT show, and only the combined chart made it visible.** Side by side: HAR goes 58%→94%→94% and HAPT goes 70%→93%→93% across `h1=16/32/64` (the expected capacity cliff, matches the original single-dataset framing from 2026-07-20), but ECG barely moves (88.9%→89.2%→88.7%). This isn't ECG being robust to small model size — ECG's test set is ~89% "Normal" beats (`balance=False`), so a degenerate model that always predicts the majority class scores ~89% on raw accuracy without learning anything, hiding whatever capacity failure the tiny model has. Same accuracy-vs-macro-F1 blind spot as the 2026-07-21 F1 investigation, now surfacing in a different plot. Not investigated further (would need macro F1 added to the ablation study's output, which it doesn't currently track) — noted as a possible future direction.
+2. **Combining files surfaces comparisons that per-dataset files hide.** The masking effect in finding 1 existed in the data since the 2026-07-20 ablation run; it just wasn't visible with three separate `ablation_study_{har,ecg,hapt}.png` files side by side in a file browser. Same lesson as the 2026-07-21 Pi-benchmark-plots entry (plotting > eyeballing).
+3. `figures/combined/` is now a stable convention for "one chart, all 3 datasets" — any future cross-dataset plot function should default its `filename` under that prefix.
+
+---
+
+**Explicitly not being pursued:** real power/energy draw per inference (needs INA219 or similar hardware, not acquired); TFLite Micro / MCU-class deployment (ESP32, Arduino Nano 33 BLE Sense); writing the findings up into a paper/report draft; further ECG rare-class F1 improvement attempts (investigation closed 2026-07-21 after 4 independent techniques failed); adding macro F1 to the ablation study's per-config output (would resolve finding 1 above but not yet requested) — user has decided not to pursue these.

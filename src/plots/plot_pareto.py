@@ -29,7 +29,7 @@ _METHOD_KEYS = [
 ]
 
 
-def plot_pareto(all_results, filename="pareto_compression.png"):
+def plot_pareto(all_results, filename="combined/pareto_compression.png"):
     """
     Scatter plot: X = model size (KB), Y = accuracy.
     Color encodes compression method; marker shape encodes dataset.

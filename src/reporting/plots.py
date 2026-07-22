@@ -1,11 +1,9 @@
-from .utils import to_float
-from src.plots.plot_accuracy import plot_accuracy
-from src.plots.plot_compression import plot_compression
+from src.plots.plot_compression import plot_compression_by_dataset
 from src.plots.plot_ablation import plot_ablation
 from src.plots.plot_roc_pr import plot_roc_pr
 from src.plots.plot_training_curves import plot_training_curves
 from src.plots.plot_confusion_matrix import plot_confusion_matrix
-from src.plots.plot_cross_dataset import plot_cross_dataset_summary
+from src.plots.plot_cross_dataset import plot_cross_dataset_summary, plot_cross_dataset_f1
 from src.plots.plot_pareto import plot_pareto
 from src.plots.plot_per_class_f1 import plot_per_class_f1
 from src.plots.plot_weight_dist import plot_weight_distribution
@@ -18,141 +16,10 @@ from src.plots.plot_branch_diversity import plot_branch_diversity
 
 
 def generate_plots(results):
-    import torch
     print("\n=== Generating Plots ===\n")
 
-    import math
-
-    for name, r in results.items():
-        if not isinstance(r, dict):
-            continue
-        acc_u_val = r.get("accuracy_uncompressed")
-        if acc_u_val is None or isinstance(acc_u_val, list):
-            continue
-        if hasattr(acc_u_val, "numel") and acc_u_val.numel() != 1:
-            continue
-
-        slug = name.lower().replace(" ", "_")
-
-        # Build full method dict — include any method that has a non-NaN accuracy
-        def _acc(key, std_key=None):
-            v = to_float(r.get(key, float("nan")))
-            s = to_float(r.get(std_key, 0.0)) if std_key else 0.0
-            return (v, s)
-
-        methods = {"Uncompressed": _acc("accuracy_uncompressed", "std_uncompressed")}
-        sf8 = _acc("accuracy_compressed", "std_compressed")
-        if not math.isnan(sf8[0]):
-            methods["Snowflake (int8)"] = sf8
-        gl8 = _acc("accuracy_compressed_global", "std_compressed_global")
-        if not math.isnan(gl8[0]):
-            methods["Global int8"] = gl8
-        dyn = _acc("accuracy_compressed_dynamic", "std_compressed_dynamic")
-        if not math.isnan(dyn[0]):
-            methods["Dynamic (int8)"] = dyn
-        sta = _acc("accuracy_compressed_static", "std_compressed_static")
-        if not math.isnan(sta[0]):
-            methods["Static (int8)"] = sta
-        sfst = _acc("accuracy_compressed_snowflake_static", "std_compressed_snowflake_static")
-        if not math.isnan(sfst[0]):
-            methods["Snowflake+Static (int8)"] = sfst
-        pch = _acc("accuracy_compressed_perchan", "std_compressed_perchan")
-        if not math.isnan(pch[0]):
-            methods["Per-channel (int8)"] = pch
-        qat = _acc("accuracy_compressed_qat", "std_compressed_qat")
-        if not math.isnan(qat[0]):
-            methods["QAT (int8)"] = qat
-        mix = _acc("accuracy_compressed_mixed", "std_compressed_mixed")
-        if not math.isnan(mix[0]):
-            methods["Mixed precision"] = mix
-        i4 = _acc("accuracy_compressed_int4", "std_compressed_int4")
-        if not math.isnan(i4[0]):
-            methods["Snowflake (int4)"] = i4
-        mlp = _acc("accuracy_mlp_baseline", "std_mlp_baseline")
-        if not math.isnan(mlp[0]):
-            methods["MLP Baseline"] = mlp
-
-        plot_accuracy(
-            methods,
-            title=f"{name} Accuracy",
-            filename=f"{slug}_accuracy.png",
-        )
-
-        # F1 plot — same method structure, different values
-        f1_methods = {"Uncompressed": _acc("f1_uncompressed", "std_f1_uncompressed")}
-        f1_sf8 = _acc("f1_compressed", "std_f1_compressed")
-        if not math.isnan(f1_sf8[0]):
-            f1_methods["Snowflake (int8)"] = f1_sf8
-        f1_gl8 = _acc("f1_compressed_global", "std_f1_compressed_global")
-        if not math.isnan(f1_gl8[0]):
-            f1_methods["Global int8"] = f1_gl8
-        f1_dyn = _acc("f1_compressed_dynamic", "std_f1_compressed_dynamic")
-        if not math.isnan(f1_dyn[0]):
-            f1_methods["Dynamic (int8)"] = f1_dyn
-        f1_sta = _acc("f1_compressed_static", "std_f1_compressed_static")
-        if not math.isnan(f1_sta[0]):
-            f1_methods["Static (int8)"] = f1_sta
-        f1_sfst = _acc("f1_compressed_snowflake_static", "std_f1_compressed_snowflake_static")
-        if not math.isnan(f1_sfst[0]):
-            f1_methods["Snowflake+Static (int8)"] = f1_sfst
-        f1_pch = _acc("f1_compressed_perchan", "std_f1_compressed_perchan")
-        if not math.isnan(f1_pch[0]):
-            f1_methods["Per-channel (int8)"] = f1_pch
-        f1_qat = _acc("f1_compressed_qat", "std_f1_compressed_qat")
-        if not math.isnan(f1_qat[0]):
-            f1_methods["QAT (int8)"] = f1_qat
-        f1_mix = _acc("f1_compressed_mixed", "std_f1_compressed_mixed")
-        if not math.isnan(f1_mix[0]):
-            f1_methods["Mixed precision"] = f1_mix
-        f1_i4 = _acc("f1_compressed_int4", "std_f1_compressed_int4")
-        if not math.isnan(f1_i4[0]):
-            f1_methods["Snowflake (int4)"] = f1_i4
-        f1_mlp = _acc("f1_mlp_baseline", "std_f1_mlp_baseline")
-        if not math.isnan(f1_mlp[0]):
-            f1_methods["MLP Baseline"] = f1_mlp
-        if not math.isnan(f1_methods["Uncompressed"][0]):
-            plot_accuracy(
-                f1_methods,
-                title=f"{name} F1 Score",
-                filename=f"{slug}_f1.png",
-                ylabel="Macro F1" if len(f1_methods) > 1 else "F1",
-            )
-
-        if "size_uncompressed" in r and not isinstance(r["size_uncompressed"], torch.Tensor):
-            import math as _math
-            _sizes = {"Uncompressed": r["size_uncompressed"]}
-            _sf8 = r.get("size_compressed")
-            if _sf8 is not None and not (isinstance(_sf8, float) and _math.isnan(_sf8)):
-                _sizes["Snowflake (int8)"] = _sf8
-            _gl8 = r.get("size_compressed_global")
-            if _gl8:
-                _sizes["Global int8"] = _gl8
-            _dyn = r.get("size_compressed_dynamic")
-            if _dyn:
-                _sizes["Dynamic (int8)"] = _dyn
-            _sta = r.get("size_compressed_static")
-            if _sta:
-                _sizes["Static (int8)"] = _sta
-            _sfst = r.get("size_compressed_snowflake_static")
-            if _sfst:
-                _sizes["Snowflake+Static (int8)"] = _sfst
-            _pch = r.get("size_compressed_perchan")
-            if _pch:
-                _sizes["Per-channel (int8)"] = _pch
-            _qat = r.get("size_compressed_qat")
-            if _qat:
-                _sizes["QAT (int8)"] = _qat
-            _mix = r.get("size_compressed_mixed")
-            if _mix:
-                _sizes["Mixed precision"] = _mix
-            _i4 = r.get("size_compressed_int4")
-            if _i4:
-                _sizes["Snowflake (int4)"] = _i4
-            plot_compression(
-                _sizes,
-                title=f"{name} Model Size",
-                filename=f"{slug}_compression.png",
-            )
+    # Accuracy, F1, and model size are combined into one cross-dataset chart
+    # each (see the ds_results block below) instead of one file per dataset.
 
     if "Component Ablation" in results and isinstance(results["Component Ablation"], dict):
         for dataset, conditions in results["Component Ablation"].items():
@@ -165,7 +32,7 @@ def generate_plots(results):
                 print(f"  Warning: Could not plot component ablation ({dataset}): {e}")
         try:
             plot_ablation_combined(results["Component Ablation"],
-                                   filename="component_ablation_all.png",
+                                   filename="combined/component_ablation_all.png",
                                    title="Compression Component Ablation (all datasets)")
             print("  Component ablation combined plot saved")
         except Exception as e:
@@ -182,7 +49,7 @@ def generate_plots(results):
                 print(f"  Warning: Could not plot regularization ablation ({dataset}): {e}")
         try:
             plot_ablation_combined(results["Regularization Ablation"],
-                                   filename="regularization_ablation_all.png",
+                                   filename="combined/regularization_ablation_all.png",
                                    title="Regularization vs. Quantization (all datasets)")
             print("  Regularization ablation combined plot saved")
         except Exception as e:
@@ -205,17 +72,24 @@ def generate_plots(results):
             print(f"  Warning: Could not plot ablation: {e}")
 
     if "Ablation Study" in results and isinstance(results["Ablation Study"], dict):
-        for dataset, configs in results["Ablation Study"].items():
-            try:
-                ablation_dict = {
-                    f"Config {i+1}": res["accuracy_uncompressed"]["mean"]
-                    for i, res in enumerate(configs)
-                }
-                if ablation_dict:
-                    plot_ablation(ablation_dict, filename=f"ablation_study_{dataset}.png")
-                    print(f"  Ablation plot saved ({dataset})")
-            except Exception as e:
-                print(f"  Warning: Could not plot ablation ({dataset}): {e}")
+        try:
+            arch_ablation, cond_labels = {}, {}
+            for dataset, configs in results["Ablation Study"].items():
+                per_cond = {}
+                for i, res in enumerate(configs):
+                    key = f"cfg{i}"
+                    acc = res["accuracy_uncompressed"]
+                    per_cond[key] = {"mean": acc["mean"], "std": acc.get("std", 0.0)}
+                    cond_labels[key] = f"h1={res['config']['h1']}"
+                arch_ablation[dataset] = per_cond
+            if arch_ablation:
+                cond_order = sorted(cond_labels, key=lambda k: int(k[3:]))
+                plot_ablation_combined(arch_ablation, filename="combined/ablation_study_all.png",
+                                       title="Architecture Size Ablation (all datasets)",
+                                       condition_order=cond_order, condition_labels=cond_labels)
+                print("  Architecture ablation combined plot saved")
+        except Exception as e:
+            print(f"  Warning: Could not plot combined architecture ablation: {e}")
 
     for name, r in results.items():
         if isinstance(r, dict) and r.get("curve_data") is not None:
@@ -261,6 +135,16 @@ def generate_plots(results):
             print("  Cross-dataset summary saved")
         except Exception as e:
             print(f"  Warning: Could not plot cross-dataset summary: {e}")
+        try:
+            plot_cross_dataset_f1(ds_results)
+            print("  Cross-dataset F1 saved")
+        except Exception as e:
+            print(f"  Warning: Could not plot cross-dataset F1: {e}")
+        try:
+            plot_compression_by_dataset(ds_results)
+            print("  Cross-dataset model size saved")
+        except Exception as e:
+            print(f"  Warning: Could not plot cross-dataset model size: {e}")
         try:
             plot_pareto(ds_results)
             print("  Pareto plot saved")

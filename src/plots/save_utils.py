@@ -11,8 +11,9 @@ def ensure_fig_dir():
     os.makedirs(FIG_DIR, exist_ok=True)
 
 def fig_path(name):
-    ensure_fig_dir()
-    return os.path.join(FIG_DIR, name)
+    path = os.path.join(FIG_DIR, name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    return path
 
 def save_fig(filename):
     plt.tight_layout()

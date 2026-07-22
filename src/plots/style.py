@@ -18,6 +18,11 @@ METHOD_COLORS = {
     "MLP Baseline":    "#D62728",
     "MLP Compressed":  "#8C564B",
     "Snowflake+Static (int8)": "#17BECF",
+    "Static (int8)":       "#7F7F7F",
+    "Per-channel (int8)":  "#BCBD22",
+    "QAT (int8)":           "#E377C2",
+    "Mixed precision":      "#393B79",
+    "Snowflake (int4)":     "#637939",
 }
 
 

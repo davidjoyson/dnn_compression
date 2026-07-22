@@ -4,7 +4,7 @@ from .save_utils import save_fig
 from .style import apply_style, METHOD_COLORS, PALETTE
 
 
-def plot_edge_profile(all_results, filename="edge_profile.png"):
+def plot_edge_profile(all_results, filename="combined/edge_profile.png"):
     """
     3-panel edge-AI summary across datasets:
       1. Model size (KB) — uncompressed vs Snowflake, with compression ratio annotated

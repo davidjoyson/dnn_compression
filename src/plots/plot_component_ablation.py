@@ -60,7 +60,9 @@ def plot_component_ablation(results, filename="component_ablation.png", title="C
     save_fig(filename)
 
 
-def plot_ablation_combined(results, filename, title):
+def plot_ablation_combined(results, filename, title, condition_order=None,
+                            condition_labels=None, condition_colors=None,
+                            ylabel="Accuracy"):
     """
     One grouped-bar chart across all datasets for a per-dataset ablation
     result set: {dataset: {condition: {"mean": float, "std": float}}}.
@@ -68,12 +70,17 @@ def plot_ablation_combined(results, filename, title):
     """
     apply_style()
 
+    condition_order = condition_order if condition_order is not None else CONDITION_ORDER
+    condition_labels = condition_labels if condition_labels is not None else CONDITION_LABELS
+    condition_colors = condition_colors if condition_colors is not None else CONDITION_COLORS
+
     datasets = [d for d in DATASET_ORDER if d in results]
     datasets += [d for d in results if d not in datasets]
     if not datasets:
         return
 
-    conditions = [c for c in CONDITION_ORDER if any(c in results[d] for d in datasets)]
+    conditions = [c for c in condition_order if any(c in results[d] for d in datasets)]
+    conditions += [c for d in datasets for c in results[d] if c not in conditions]
 
     n_cond = len(conditions)
     group_w = 0.8
@@ -87,14 +94,14 @@ def plot_ablation_combined(results, filename, title):
         stds  = [results[d].get(cond, {}).get("std", 0.0) for d in datasets]
         offset = (j - (n_cond - 1) / 2) * bar_w
         ax.bar(x + offset, means, yerr=stds, width=bar_w * 0.9,
-               color=CONDITION_COLORS.get(cond, PALETTE[j % len(PALETTE)]),
-               label=CONDITION_LABELS.get(cond, cond.replace("_", " ").title()),
+               color=condition_colors.get(cond, PALETTE[j % len(PALETTE)]),
+               label=condition_labels.get(cond, str(cond).replace("_", " ").title()),
                zorder=3, edgecolor="white", linewidth=0.8,
                error_kw=dict(elinewidth=1.0, capsize=3, ecolor="#444444"))
 
     ax.set_xticks(x)
     ax.set_xticklabels([DATASET_LABELS.get(d, d.upper()) for d in datasets])
-    ax.set_ylabel("Accuracy")
+    ax.set_ylabel(ylabel)
     ax.set_ylim(0.0, 1.05)
     ax.set_title(title, pad=14)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.10), ncol=n_cond, frameon=False)

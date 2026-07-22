@@ -3,7 +3,7 @@ from .save_utils import save_fig
 from .style import apply_style, METHOD_COLORS, PALETTE
 
 
-def plot_inference_time(all_results, filename="inference_time.png"):
+def plot_inference_time(all_results, filename="combined/inference_time.png"):
     """
     all_results: dict of {dataset_name: result dict}
     Grouped bar chart of inference time (ms) per method per dataset.
