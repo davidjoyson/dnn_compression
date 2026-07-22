@@ -36,7 +36,12 @@ SEEDS  = (42, 0, 7, 1, 2, 3, 4, 5, 6, 8)
 EPOCHS = 50
 
 ALL_EXPERIMENTS = ["har", "ecg", "hapt", "ablation", "component", "regularization"]
-_DEFAULT_EXPERIMENTS = ["har", "ecg", "hapt"]
+# HAR dropped from the default set 2026-07-22 — see docs/experiment_log.md.
+# Same subject pool as HAPT (verified: identical 21/9 train/test subject IDs),
+# and HAPT's first 6 classes already cover HAR's task, so it adds little beyond
+# what HAPT's larger/imbalanced class set already tests. Still available via
+# `--exp har`; not removed like the leaky ECG split or the leakage-unfixable EEG set.
+_DEFAULT_EXPERIMENTS = ["ecg", "hapt"]
 
 class _Tee:
     """Mirror a stream to both the terminal and a log file."""
@@ -143,7 +148,7 @@ def main():
     )
     parser.add_argument(
         "--exp", nargs="+", choices=ALL_EXPERIMENTS, default=_DEFAULT_EXPERIMENTS, metavar="EXP",
-        help="Experiments to run (default: har ecg hapt).\nChoices: " + ", ".join(ALL_EXPERIMENTS),
+        help="Experiments to run (default: ecg hapt).\nChoices: " + ", ".join(ALL_EXPERIMENTS),
     )
     parser.add_argument("--epochs", type=int, default=EPOCHS,
                         help=f"Training epochs per experiment (default: {EPOCHS})")

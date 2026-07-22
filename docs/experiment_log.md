@@ -1439,3 +1439,35 @@ Numbers reproduced exactly against the 2026-07-21 run (same seeds, same `balance
 ---
 
 **Explicitly not being pursued:** real power/energy draw per inference (needs INA219 or similar hardware, not acquired); TFLite Micro / MCU-class deployment (ESP32, Arduino Nano 33 BLE Sense); writing the findings up into a paper/report draft; further ECG rare-class F1 improvement attempts (investigation closed 2026-07-21 after 4 independent techniques failed); adding macro F1 to the ablation study's per-config output (would resolve finding 1 above but not yet requested) — user has decided not to pursue these.
+
+---
+
+## 2026-07-22 — HAR/HAPT Leakage Independently Verified; HAR Dropped From Default Experiments
+
+**Commits:** *(pending)*
+
+### Summary
+Two things prompted by the same question ("HAR and HAPT are basically the same dataset — why run both?"): first, whether HAR/HAPT's official UCI train/test split had ever actually been checked for leakage the way ECG's and EEG's were (it hadn't — both were trusted at face value); second, whether running both is worth the redundancy given how similar they are.
+
+### Verification
+Neither `load_har.py` nor `load_hapt.py` downloads the `subject_id_train.txt`/`subject_id_test.txt` files that UCI ships in both archives (the loaders only pull `X_train.txt`/`y_train.txt`/`X_test.txt`/`y_test.txt`, since the split is already applied). Pulled those files directly from the UCI zips and checked for subject overlap between train and test:
+
+| Dataset | Train subjects (n=21) | Test subjects (n=9) | Overlap |
+|---|---|---|---|
+| HAR  | {1,3,5,6,7,8,11,14,15,16,17,19,21,22,23,25,26,27,28,29,30} | {2,4,9,10,12,13,18,20,24} | **NONE** |
+| HAPT | {1,3,5,6,7,8,11,14,15,16,17,19,21,22,23,25,26,27,28,29,30} | {2,4,9,10,12,13,18,20,24} | **NONE** |
+
+Both clean — zero subject overlap, confirmed independently rather than assumed from documentation. Notably, HAR and HAPT use the *identical* 21/9 subject split — same volunteers, same train/test boundary — confirming they're drawn from the same underlying data collection (Reyes-Ortiz et al.), not just similar by coincidence.
+
+### Decision: HAR dropped from default experiments
+Given HAR and HAPT share the same subject pool and HAPT's first 6 classes already cover HAR's 6-class task, HAR was removed from `_DEFAULT_EXPERIMENTS` in `main.py` (now `["ecg", "hapt"]`, was `["har", "ecg", "hapt"]`). Unlike the leaky ECG split or the leakage-unfixable EEG set, HAR itself is not being dropped for a correctness reason — it's clean and remains fully supported via `--exp har`. This is a scope/redundancy decision: HAPT's extra 6 transition classes (naturally imbalanced, 23-90 train examples each) already give the project a second, milder imbalance test case beyond HAR's clean balance, so keeping both added little.
+
+### Changes
+- `main.py`: `_DEFAULT_EXPERIMENTS = ["ecg", "hapt"]` (was `["har", "ecg", "hapt"]`). `ALL_EXPERIMENTS`, `_EXP_TABLE["har"]`, and `_ABLATION_DATASETS["har"]` all left untouched — HAR is still fully wired, just opt-in. `--exp ablation`/`component`/`regularization` still include HAR by default (needed as the clean control for the ablation-masking comparison in the 2026-07-22 entry above).
+- README updated: results table kept as-is (still valid historical evidence), new note in the Results section explaining the opt-in status and the verification above; Usage/CLI-flags sections updated to show `ecg hapt` as the new default; Setup's dataset table and Project Structure tree annotated.
+
+### Key Findings
+
+1. **HAR and HAPT were never independently leakage-audited before now** — only ECG and EEG got a dedicated investigation (because their sources looked suspicious: a flat unlabeled Kaggle CSV, and a dataset with no session structure at all). HAR/HAPT's official UCI pre-split was trusted without checking, even though the check turned out to be cheap (the ID files were sitting in the same zip already being downloaded). Both came back clean.
+2. **HAR and HAPT are drawn from the exact same subject pool and split boundary** — not just similar datasets, but literally the same 30 volunteers split the same way, with HAPT being a superset (transition classes added on top of HAR's original 6 activities).
+3. **HAR is now opt-in rather than default**, trimming the default `python main.py` run from 3 datasets to 2 without losing any real coverage — HAPT already tests everything HAR tests, plus more.

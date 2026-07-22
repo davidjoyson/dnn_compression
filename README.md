@@ -68,6 +68,8 @@ All methods optionally followed by 3 epochs of post-quantization fine-tuning. Co
 
 Snowflake matches or beats uncompressed on all 3 datasets. TOST equivalence testing (±2% margin) confirms all 24/24 method–dataset pairs are equivalent.
 
+**HAR is no longer part of the default `python main.py` run** (default is now `ecg hapt`, 2026-07-22). HAR and HAPT were verified to use the *exact same* 21/9 subject-independent train/test split (independently confirmed — zero subject overlap in either), and HAPT's first 6 classes already cover HAR's task, so running both added little beyond what HAPT's larger, imbalanced class set already tests. HAR remains fully supported — the results above are unchanged and still valid — just opt-in via `--exp har` rather than automatic. See `docs/experiment_log.md`, 2026-07-22 entry.
+
 **ECG uses the patient-independent (DS1/DS2) split**, not the original Kaggle random split. The original split was found to leak patient data between train/test (no patient ID, known to split by individual beat), inflating accuracy by ~13 percentage points relative to the (still-leaky) balanced-training version. See `docs/experiment_log.md`, 2026-07-20 and 2026-07-21 entries, for the full investigation. The old `load_ecg.py` (leaky) loader is kept in the repo for reference but is no longer used by the default pipeline.
 
 **ECG and HAPT both train on their natural, unbalanced class distribution** (`balance=False`) rather than oversampling minority classes to match the majority — oversampling by duplication was tried and gave a *less* consistent equivalence result (3 of 8 ECG methods failed TOST) without actually improving F1/balanced accuracy (duplicating a handful of real minority-class examples doesn't add information, it just lets the model overfit to those few repeats). Macro F1 and balanced accuracy remain low on both datasets' rare classes regardless of this choice — see `docs/experiment_log.md` for the full investigation of that separate problem.
@@ -120,7 +122,7 @@ dnn_compression/
 │   │   └── evaluate.py                  # Accuracy, F1, confusion matrix
 │   │
 │   ├── loaders/
-│   │   ├── load_har.py                  # UCI HAR (wearable sensors, 6-class)
+│   │   ├── load_har.py                  # UCI HAR (wearable sensors, 6-class) — opt-in, not in default run
 │   │   ├── load_ecg.py                  # MIT-BIH ECG, Kaggle random split — unused, kept for reference (leaky, see note above)
 │   │   ├── load_ecg_patient_split.py    # MIT-BIH ECG, patient-independent DS1/DS2 split (5-class) — active loader
 │   │   ├── load_eeg.py                  # EEG brainwave emotions (3-class) — unused, kept for reference
@@ -128,7 +130,7 @@ dnn_compression/
 │   │
 │   ├── experiments/
 │   │   ├── base_experiment.py           # Shared training + eval loop for all datasets
-│   │   ├── har_experiment.py
+│   │   ├── har_experiment.py            # opt-in, not in default run (see note above)
 │   │   ├── ecg_experiment.py            # unused, kept for reference (leaky split, see note above)
 │   │   ├── ecg_patient_experiment.py    # active ECG experiment (patient-independent split)
 │   │   ├── eeg_experiment.py            # unused, kept for reference (see leakage note above)
@@ -161,10 +163,8 @@ dnn_compression/
         ├── per_seed_metrics.csv
         ├── summary.txt
         ├── figures/
-        └── models/
-            ├── har/   (dendritic_uncompressed.pt, dendritic_snowflake.pt, mlp.pt)
-            ├── ecg/
-            ├── eeg/
+        └── models/       (per experiment run — default: ecg/, hapt/; har/ if run with --exp har)
+            ├── ecg/    (dendritic_uncompressed.pt, dendritic_snowflake.pt, mlp.pt)
             └── hapt/
 ```
 
@@ -180,7 +180,7 @@ pip install torch scikit-learn pandas numpy matplotlib torchinfo tqdm
 
 | Dataset | Source | Auto-download? |
 |---|---|---|
-| UCI HAR | [UCI ML Repository](https://archive.ics.uci.edu/dataset/240/human+activity+recognition+using+smartphones) | Manual — place in `data/har/` |
+| UCI HAR *(opt-in — not in default run, see Results)* | [UCI ML Repository](https://archive.ics.uci.edu/dataset/240/human+activity+recognition+using+smartphones) | Manual — place in `data/har/` |
 | ECG Heartbeat | Kaggle `shayanfazeli/heartbeat` | Via Kaggle CLI on first load |
 | UCI HAPT | [UCI ML Repository](https://archive.ics.uci.edu/dataset/341/smartphone+based+recognition+of+human+activities+and+postural+transitions) | Manual — place in `data/hapt/` |
 | EEG Brainwave *(unused, kept for reference)* | Kaggle `birdy654/eeg-brainwave-dataset-feeling-emotions` | Not wired into the experiment CLI — see leakage note above |
@@ -192,11 +192,11 @@ For Kaggle datasets, set up `~/.kaggle/kaggle.json` with your credentials. `.npy
 ## Usage
 
 ```bash
-# Run all 3 datasets (default)
+# Run the default experiments (ecg + hapt)
 python main.py
 
-# Run specific experiments
-python main.py --exp har ecg
+# Run specific experiments — e.g. include HAR (opt-in, not in default run)
+python main.py --exp har ecg hapt
 
 # Override epochs and seeds
 python main.py --epochs 50 --seeds 42 0 7
@@ -218,7 +218,7 @@ python main.py --replot outputs/run_A outputs/run_B
 
 | Flag | Default | Description |
 |---|---|---|
-| `--exp` | `har ecg hapt` | Experiments to run |
+| `--exp` | `ecg hapt` | Experiments to run |
 | `--epochs` | `50` | Training epochs per experiment |
 | `--seeds` | `42 0 7 1 2 3 4 5 6 8` | Random seeds (results averaged) |
 | `--fine-tune-epochs` | `3` | Post-quantization fine-tuning epochs |
