@@ -1,17 +1,31 @@
 DNN Compression — Project Summary
 ===================================
+(Last updated 2026-07-22 — see docs/experiment_log.md for full history)
 
 WHAT IT IS
 ----------
-A research project testing whether biologically-inspired dendritic neural networks can be
+A research project testing whether a biologically-inspired dendritic neural network can be
 compressed 4x with no accuracy loss on edge-AI classification tasks (wearables, sensors,
-biomedical signals).
+biomedical signals), and whether its branching structure gives it an actual robustness
+advantage under quantization over conventional MLPs.
 
-CORE HYPOTHESIS
----------------
+CORE HYPOTHESIS — STATUS: PARTIALLY CONFIRMED, CENTRAL CLAIM NOT SUPPORTED
+---------------------------------------------------------------------------
 The dendritic network's "snowflake" property — parallel branches each learning distinct
-feature subspaces — makes it especially compatible with per-layer int8 quantization, since
-each branch's weight distribution is narrow and independently calibrated.
+feature subspaces — was hypothesised to make it especially compatible with per-layer int8
+quantization, since each branch's weight distribution was expected to be narrow and
+independently calibrated, giving it better compression tolerance than a conventional MLP.
+
+  - CONFIRMED: branches really are narrower and more weight-distinct than a structurally
+    matched non-branching control layer (17-27% lower weight std, near-zero inter-branch
+    cosine similarity, all 3 datasets).
+  - NOT CONFIRMED: that narrowness does NOT translate into a measurable quantization-
+    robustness advantage. A full 10-seed, 3-model (Dendritic vs. total-param-matched MLP
+    vs. per-layer-matched MLP), 8-method comparison found an identical ~0.0026 mean
+    accuracy-delta under compression across all three architectures. The motivating
+    "outperforms standard quantization baselines" claim is not supported by the data.
+  - WHAT DOES HOLD UP: Dendritic's plain, uncompressed accuracy edge over both baselines
+    on the harder tasks (ECG, HAPT) — a real result, just independent of quantization.
 
 ARCHITECTURE
 ------------
@@ -19,72 +33,134 @@ DendriticNetwork:
   Input -> FC1 -> N parallel branches (each FC+ReLU) -> Concat -> Soma -> FC2 -> Output
 
   Soma: collapses each branch's activations to one signal per branch (biologically motivated
-  dendritic integration). Compared against a param-matched MLPBaseline (single hidden layer,
-  same parameter count).
+  dendritic integration). Compared against two baselines: MLPBaseline (single hidden layer,
+  total parameter count matched) and LayerMatchedMLP (per-layer shape matched — added
+  2026-07-18 after the total-param-only comparison was found to hide very different weight
+  matrix shapes behind an equal total).
 
-COMPRESSION METHODS TESTED
----------------------------
-  Snowflake int8   Per-layer int8, one scale per layer group (weight+bias)   4x
-  Global int8      Single scale across all parameters                        4x
-  Dynamic int8     PyTorch quantize_dynamic on Linear layers                ~4x
-  Snowflake int4   Per-layer 4-bit, packed 2-per-byte                       8x (size-dependent)
+COMPRESSION METHODS TESTED (8, all vs. the same uncompressed baseline)
+-------------------------------------------------------------------------
+  Snowflake int8        Per-layer int8, one scale per layer group (weight+bias)   4x
+  Global int8           Single scale across all parameters                        4x
+  Dynamic int8          PyTorch quantize_dynamic on Linear layers                ~4x
+  Static int8           Per-tensor static calibration (prepare/convert)          ~4x
+  Per-channel int8      One scale per output neuron row; biases stay float32     ~4x
+  QAT int8              Quantization-aware training (prepare_qat_fx/convert_fx)  ~4x
+  Snowflake+Static int8 Snowflake weights + true static-quantized activations    ~4x
+  Mixed precision       Inner layers int8, first/last layers float32            ~0.9x
+  (Snowflake int4 also implemented; viability is model-size-dependent, not
+  re-verified on the current 3-dataset default set since EEG was dropped.)
 
-KEY RESULTS (50 epochs, 3 seeds: 42, 0, 7)
--------------------------------------------
-  Dataset                  Task                      Uncompressed      Snowflake int8     Delta
-  UCI HAR                  6-class activity           97.94% +/-0.32%  97.93% +/-0.34%   -0.02% (n.s.)
-  ECG Heartbeat (MIT-BIH)  5-class arrhythmia         96.08% +/-0.43%  96.60% +/-0.42%   +0.53% (n.s.)
-  EEG Brainwave            3-class emotion            97.66% +/-0.23%  97.58% +/-0.14%   -0.08% (n.s.)
-  HAPT                     12-class transitions       92.45% +/-0.52%  92.80% +/-0.62%   +0.35% (n.s.)
+  Real hardware distinction (Raspberry Pi 3, see EDGE DEPLOYMENT below): Snowflake is
+  weight-only (dequantizes to float32 before compute, ~1.0x real speedup despite 4x
+  storage savings). Static/Snowflake+Static/QAT run true int8 arithmetic and deliver a
+  genuine ~1.8-2.2x latency reduction. Storage compression and compute speedup are not
+  the same thing.
 
-  Snowflake matches or beats uncompressed on all 4 datasets.
-  No statistically significant degradation (paired t-test, n=3).
+KEY RESULTS (50 epochs, 10 seeds: 42,0,7,1,2,3,4,5,6,8)
+-----------------------------------------------------------
+  Dataset                       Classes  Uncompressed      Snowflake int8     Delta    TOST
+  UCI HAR                       6        94.12% +/-0.48%  94.16% +/-0.45%   +0.04%   EQUIV
+  ECG Heartbeat (patient-split) 5        87.92% +/-1.86%  88.38% +/-1.48%   +0.46%   EQUIV
+  HAPT (transitions incl.)      12       92.51% +/-0.74%  92.77% +/-0.56%   +0.26%   EQUIV
+
+  All 24/24 method-dataset pairs are TOST-equivalent (n=10, +/-2% margin).
+  Snowflake matches or beats uncompressed on all 3 datasets.
+
+  NOTE ON DATASETS: EEG Brainwave (4th dataset, 3-class emotion) was dropped 2026-07-21
+  after investigation confirmed unfixable patient/session-level data leakage in the source
+  CSV. ECG uses a patient-independent (DS1/DS2) split, not the original Kaggle random
+  split — the original was found to leak patient data between train/test, inflating
+  accuracy by ~13pp. ECG and HAPT both train on their natural, unbalanced class
+  distribution (balance=False) — oversampling minority classes by duplication was tried
+  and reverted (net negative: less consistent TOST result, no real F1 improvement).
 
 KEY FINDINGS
 ------------
-1. Snowflake int8 = 4x lossless compression
-   Per-layer calibration is essential; global int8 degrades accuracy.
+1. Snowflake int8 = ~4x compression, no statistically significant accuracy loss (24/24
+   TOST-equivalent). Per-layer calibration matters; global int8 is slightly less reliable.
 
-2. Dynamic int8 is unreliable
-   Fails on EEG (-2.42%, p=0.001) because PyTorch's runtime activation estimation
-   struggles with the large fc1 layer (163k params).
+2. Dendritic shows NO consistent quantization-robustness advantage over either MLP
+   baseline (identical ~0.0026 mean accuracy-delta across all 3 models, all 8 methods,
+   10 seeds). This is the project's central negative result — see CORE HYPOTHESIS above.
 
-3. Topology sharing is destructive
-   Forcing branches to share weights collapses accuracy; the snowflake diversity is
-   what makes quantization work.
+3. Dendritic's branches are measurably narrower and more weight-distinct than a
+   structurally-equivalent non-branching control layer (17-27% lower weight std). Real
+   structural property, but it doesn't confer the anticipated compression benefit.
 
-4. Int4 viability scales with model size
-   Not viable at ~17k params (ECG: -23.67%); viable at ~167k params (EEG: 0.00% delta
-   at 8x compression).
+4. ECG's macro F1 / balanced accuracy remain low (~0.37 / ~0.39) regardless of training
+   approach. Four independent techniques tried and failed to improve it: oversampling by
+   duplication, class-weighted loss, focal loss, Tversky loss. Root cause is data scarcity
+   (8 real "Unknown"-class training examples, not a fixable training-methodology gap).
+   Investigation closed 2026-07-21.
 
-5. Quantization regularises
-   Snowflake improves over uncompressed on ECG and HAPT (small model regime).
+5. Dynamic int8 is the least reliable method, and its real-hardware speedup verdict
+   flips with batch size: slower than float32 at full-throughput batching (0.44-0.60x)
+   but faster at batch=1 (1.27-1.40x) — deployment batch size determines whether it helps.
 
-6. Dendritic > MLP on complex tasks
-   +1.28% on ECG (5-class arrhythmia); equal on EEG (pre-engineered features).
+6. Topology sharing (forcing branches to share weights) is destructive — collapses
+   accuracy. Branch diversity is load-bearing for whatever the architecture does well.
 
-DATASETS
---------
-  UCI HAR           561 features, 6-class wearable activity (walking, sitting, etc.)
-  ECG Heartbeat     187 features, 5-class arrhythmia (87k train samples, MIT-BIH)
-  EEG Brainwave     2,548 features, 3-class emotion (1,706 train samples)
-  HAPT              561 features, 12-class activities + postural transitions (oversampled)
+7. On real Raspberry Pi 3 hardware: true-int8 methods (Static, Snowflake+Static, QAT)
+   give ~1.8-2.2x real latency speedup; Snowflake (weight-only) gives ~1.0x despite 4x
+   storage compression. Memory usage does not trade off consistently against speed
+   (dataset-dependent, not a universal rule). No thermal throttling risk under 15 min
+   sustained load (steady-state 46.2C, no active cooling).
+
+8. Architecture-size ablation (h1=16/32/64) shows the expected tiny-model capacity cliff
+   on HAR and HAPT (accuracy craters with huge seed variance) but it's nearly invisible
+   on ECG in raw accuracy — because ECG's imbalanced test set lets a degenerate model
+   score ~89% by always predicting the majority class, masking the same underlying
+   capacity failure (same accuracy-vs-F1 blind spot as finding 4).
+
+DATASETS (3 active)
+--------------------
+  UCI HAR            561 features, 6-class wearable activity (walking, sitting, etc.)
+  ECG Heartbeat       187 features, 5-class arrhythmia, patient-independent DS1/DS2 split
+                      (MIT-BIH via PhysioNet), natural unbalanced distribution
+  HAPT                561 features, 12-class activities + postural transitions,
+                      natural unbalanced distribution
+  EEG Brainwave       DROPPED 2026-07-21 — unfixable patient/session leakage in the only
+                      available source data. Loader/experiment code kept for reference,
+                      not wired into the CLI.
 
 WHAT WAS EXPLORED AND RULED OUT
 --------------------------------
-  Pruning 75%        Catastrophic at ~17k params (37% accuracy) — dropped
-  Int4 at small scale  Not viable below ~100k params
-  Topology sharing   Always destructive — validated by ablation
-  TensorFlow port    Built, verified parity with PyTorch, then deleted (PyTorch-only)
+  Topology sharing              Always destructive — validated by ablation
+  Original/leaky ECG split      ~13pp accuracy inflation from patient leakage — replaced
+                                 by patient-independent DS1/DS2 split
+  EEG dataset                   Unfixable leakage in the only available source data —
+                                 dropped from the default experiment set entirely
+  Oversampling by duplication   Net negative for ECG/HAPT — less consistent TOST result,
+                                 no real F1/balanced-accuracy improvement — reverted
+  Class-weighted loss           No F1 improvement (recall up, precision collapsed
+                                 equally) — reverted, not committed
+  Focal loss, Tversky loss      Both tried for ECG rare-class F1 — neither beat plain
+                                 CrossEntropy; Tversky backfired (0 recall on 3 classes)
+  Pruning 75% (historical)      Catastrophic at ~17k params — dropped early in the project
+  TensorFlow port (historical)  Built, verified parity with PyTorch, then deleted
+                                 (project stays PyTorch-only)
 
-OPEN DIRECTIONS / POTENTIAL NEXT STEPS
----------------------------------------
-  - Int4 experiments at intermediate model sizes (~50k-100k params) to find exact
-    viability threshold
-  - Larger dendritic architectures (more branches, more hidden neurons)
-  - Literature review on:
-      * Dendritic computation models
-      * Quantization-aware training (QAT)
-      * Edge-AI compression techniques
-      * Biological plausibility of branched/dendritic networks
-      * Neural network compression surveys
+EDGE DEPLOYMENT (Raspberry Pi 3, real hardware, qnnpack backend)
+-------------------------------------------------------------------
+  Dataset   Float32    Snowflake(int8)   Static W+A(int8)   Snowflake+Static(int8)
+  HAR       9.01 ms    9.25 ms (0.97x)   4.62 ms (1.95x)    4.54 ms (1.98x)
+  ECG       8.30 ms    8.33 ms (1.00x)   4.61 ms (1.80x)    4.70 ms (1.77x)
+  HAPT      8.88 ms    9.02 ms (0.99x)   4.52 ms (1.97x)    4.56 ms (1.95x)
+
+  Full 10-method comparison, memory profiling, batch=-1 vs batch=1, and a real-hardware
+  Pareto chart are in benchmark_pi_output/ (python plot_pi_benchmark.py). Not yet
+  measured: real power/energy draw per inference (needs external hardware, e.g. INA219 —
+  Pi 3 has no built-in power ADC).
+
+OPEN DIRECTIONS (deliberately not being pursued right now)
+----------------------------------------------------------
+  - Further ECG rare-class F1 improvement (investigation closed after 4 techniques
+    failed) — next candidate would be hierarchical Normal-vs-Abnormal classification,
+    not attempted
+  - Adding macro F1 to the architecture-size ablation's per-config output (would clarify
+    finding 8 above)
+  - Real power/energy draw per inference (needs INA219 or similar hardware)
+  - TFLite Micro / MCU-class deployment (ESP32, Arduino Nano 33 BLE Sense) — Pi 3 results
+    validate an ARM Linux SBC, not bare-metal microcontroller hardware
+  - Writing the findings up into a paper/report draft
