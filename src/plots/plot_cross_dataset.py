@@ -5,7 +5,7 @@ from .save_utils import save_fig
 from .style import apply_style, METHOD_COLORS, PALETTE
 
 # Fixed method order + label -> result-key stub, shared by accuracy and F1
-# (e.g. "accuracy" + stub / "std" + stub, or "f1" + stub / "std_f1" + stub).
+# (e.g. "accuracy" + stub, or "f1" + stub).
 METHOD_STUBS = [
     ("Uncompressed",             "_uncompressed"),
     ("Snowflake (int8)",         "_compressed"),
@@ -25,12 +25,12 @@ def _isnan(v):
     return v is None or (isinstance(v, float) and math.isnan(v))
 
 
-def _plot_grouped_metric(all_results, key_prefix, std_prefix, title, filename, ylabel):
+def _plot_grouped_metric(all_results, key_prefix, title, filename, ylabel):
     apply_style()
 
     datasets = list(all_results.keys())
     methods = [
-        (label, key_prefix + stub, std_prefix + stub)
+        (label, key_prefix + stub)
         for label, stub in METHOD_STUBS
         if any(not _isnan(all_results[d].get(key_prefix + stub)) for d in datasets)
     ]
@@ -44,18 +44,16 @@ def _plot_grouped_metric(all_results, key_prefix, std_prefix, title, filename, y
 
     fig, ax = plt.subplots(figsize=(max(8, n_ds * 3), 5))
 
-    for i, (label, acc_key, std_key) in enumerate(methods):
-        vals, stds = [], []
+    for i, (label, acc_key) in enumerate(methods):
+        vals = []
         for ds in datasets:
             r = all_results[ds]
             v = r.get(acc_key)
-            s = r.get(std_key, 0.0)
             vals.append(float(v) if not _isnan(v) else float("nan"))
-            stds.append(float(s) if s == s else 0.0)
 
         color = METHOD_COLORS.get(label, PALETTE[i % len(PALETTE)])
         ax.bar(x + offsets[i], vals, width, label=label, color=color,
-               yerr=stds, capsize=3, zorder=3, edgecolor="white", linewidth=0.6)
+               zorder=3, edgecolor="white", linewidth=0.6)
 
     ax.set_ylabel(ylabel)
     ax.set_title(title, pad=14)
@@ -65,7 +63,7 @@ def _plot_grouped_metric(all_results, key_prefix, std_prefix, title, filename, y
     all_vals = [
         float(all_results[ds][key])
         for ds in datasets
-        for _, key, _ in methods
+        for _, key in methods
         if not _isnan(all_results[ds].get(key))
     ]
     ymin = max(0.0, min(all_vals) - 0.08) if all_vals else 0.0
@@ -77,11 +75,11 @@ def _plot_grouped_metric(all_results, key_prefix, std_prefix, title, filename, y
 
 def plot_cross_dataset_summary(all_results, filename="combined/cross_dataset_summary.png"):
     """Grouped bar chart: datasets on X-axis, one bar group per compression method, accuracy."""
-    _plot_grouped_metric(all_results, "accuracy", "std",
+    _plot_grouped_metric(all_results, "accuracy",
                           "Accuracy Across Datasets and Compression Methods", filename, "Accuracy")
 
 
 def plot_cross_dataset_f1(all_results, filename="combined/cross_dataset_f1.png"):
     """Grouped bar chart: datasets on X-axis, one bar group per compression method, macro F1."""
-    _plot_grouped_metric(all_results, "f1", "std_f1",
+    _plot_grouped_metric(all_results, "f1",
                           "Macro F1 Across Datasets and Compression Methods", filename, "Macro F1")

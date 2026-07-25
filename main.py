@@ -9,12 +9,10 @@ from tqdm import tqdm
 from src.experiments.ablation_study import (
     run_ablation, run_compression_component_ablation, run_regularization_ablation,
 )
-from src.experiments.har_experiment import run_har
 from src.experiments.ecg_patient_experiment import run_ecg_patient
 from src.experiments.hapt_experiment import run_hapt
 
 from src.loaders.load_ecg_patient_split import load_ecg_patient_split
-from src.loaders.load_har import load_har
 from src.loaders.load_hapt import load_hapt
 
 from src.models.dendritic_network import DendriticNetwork
@@ -35,12 +33,7 @@ from src.reporting import (
 SEEDS  = (42, 0, 7, 1, 2, 3, 4, 5, 6, 8)
 EPOCHS = 50
 
-ALL_EXPERIMENTS = ["har", "ecg", "hapt", "ablation", "component", "regularization"]
-# HAR dropped from the default set 2026-07-22 — see docs/experiment_log.md.
-# Same subject pool as HAPT (verified: identical 21/9 train/test subject IDs),
-# and HAPT's first 6 classes already cover HAR's task, so it adds little beyond
-# what HAPT's larger/imbalanced class set already tests. Still available via
-# `--exp har`; not removed like the leaky ECG split or the leakage-unfixable EEG set.
+ALL_EXPERIMENTS = ["ecg", "hapt", "ablation", "component", "regularization"]
 _DEFAULT_EXPERIMENTS = ["ecg", "hapt"]
 
 class _Tee:
@@ -67,7 +60,6 @@ class _Tee:
 _ABLATION_CONFIG = {"h1": 64, "h2": 32, "branches": 8, "hidden_per_branch": 8}
 
 _ABLATION_DATASETS = {
-    "har":  (lambda: load_har(),  6),
     "ecg":  (lambda: load_ecg_patient_split(balance=False), 5),
     "hapt": (lambda: load_hapt(balance=False), 12),
 }
@@ -126,7 +118,6 @@ def _run_regularization(results, timings, epochs, seeds):
 
 
 _EXP_TABLE = {
-    "har":  ("UCI HAR (Wearable Sensors)",                    "UCI HAR",       run_har),
     "ecg":  ("ECG Heartbeat (Patient-Split, 5-class)",        "ECG Heartbeat", run_ecg_patient),
     "hapt": ("HAPT (UCI Smartphone, 12-class)",               "HAPT",          run_hapt),
 }
@@ -210,7 +201,6 @@ def main():
     sys.stderr = _Tee(sys.__stderr__, _log_fh)
 
     _model_dirs = {
-        "har":  os.path.join(_models_root, "har"),
         "ecg":  os.path.join(_models_root, "ecg"),
         "hapt": os.path.join(_models_root, "hapt"),
     }

@@ -1471,3 +1471,51 @@ Given HAR and HAPT share the same subject pool and HAPT's first 6 classes alread
 1. **HAR and HAPT were never independently leakage-audited before now** — only ECG and EEG got a dedicated investigation (because their sources looked suspicious: a flat unlabeled Kaggle CSV, and a dataset with no session structure at all). HAR/HAPT's official UCI pre-split was trusted without checking, even though the check turned out to be cheap (the ID files were sitting in the same zip already being downloaded). Both came back clean.
 2. **HAR and HAPT are drawn from the exact same subject pool and split boundary** — not just similar datasets, but literally the same 30 volunteers split the same way, with HAPT being a superset (transition classes added on top of HAR's original 6 activities).
 3. **HAR is now opt-in rather than default**, trimming the default `python main.py` run from 3 datasets to 2 without losing any real coverage — HAPT already tests everything HAR tests, plus more.
+
+---
+
+## 2026-07-24 — HAR Removed Entirely; Cross-Dataset Error Bars Dropped; Default Run Reconfirmed
+
+**Commits:** *(pending)*
+
+### Summary
+Followed up on the 2026-07-22 decision to make HAR opt-in by removing it as a runnable experiment altogether — `--exp har` is no longer a valid choice, and HAR is also gone from the ablation/component/regularization dataset set (previously kept there as the "clean control" for the ECG-masking comparison). Separately, dropped the black yerr error bars from the cross-dataset accuracy/F1 bar charts and re-ran the default `ecg`/`hapt` experiments to reconfirm nothing broke.
+
+### Changes
+- `main.py`: `har` removed from `ALL_EXPERIMENTS`, `_EXP_TABLE`, `_ABLATION_DATASETS`, and `_model_dirs`; unused `run_har`/`load_har` imports dropped. `_ABLATION_DATASETS` now only has `ecg`/`hapt`, so `ablation`/`component`/`regularization` runs cover 2 datasets instead of 3.
+- `src/plots/plot_cross_dataset.py`: removed the `yerr=stds, capsize=3` error bars from `_plot_grouped_metric` (used by both `plot_cross_dataset_summary` and `plot_cross_dataset_f1`) along with the now-dead `std_prefix`/`std_key`/`stds` plumbing that only existed to feed them.
+
+### Full Run — 10 Seeds, `ecg`+`hapt` (`run_20260724_151228_ecg_hapt_epo50`, 70m8s)
+Reconfirmed against the 2026-07-22 numbers: ECG uncompressed 0.8792±0.0186 (was 0.8792), Snowflake 0.8838±0.0148 (was 0.8838); HAPT uncompressed 0.9251±0.0074 (was 0.9251), Snowflake 0.9277±0.0056 (was 0.9277). Identical to 4 decimal places — deterministic, no regression from the plotting-only changes. Both still ~4.0x compression, all 8 methods TOST-equivalent.
+
+---
+
+## 2026-07-25 — Ablation Studies Re-Run at 10 Seeds (`ecg`+`hapt` only); Compared Against 2026-07-22's 3-Seed Run
+
+**Commits:** *(pending)*
+
+### Summary
+Ran `ablation`/`component`/`regularization` at the (now-default) 10 seeds for the first time — every prior ablation run had used only 3 seeds (42, 0, 7). Also the first ablation run without HAR, following the 2026-07-24 removal.
+
+### Full Run — 10 Seeds, `ablation`+`component`+`regularization`, `ecg`+`hapt` only (`run_20260725_104733_ablation_component_regularization_epo50`, 3h43m56s: Ablation 5805s, Component 2413s, Regularization 5204s)
+
+### 3-Seed (2026-07-22) vs 10-Seed (2026-07-25) Comparison
+| | 3-seed | 10-seed |
+|---|---|---|
+| Ablation ecg h1=16 | 0.8888 ± 0.0162 | 0.8972 ± 0.0169 |
+| Ablation ecg h1=32 | 0.8923 ± 0.0060 | 0.8852 ± 0.0106 |
+| Ablation ecg h1=64 | 0.8865 ± 0.0183 | 0.8877 ± 0.0148 |
+| Ablation hapt h1=16 | 0.7027 ± 0.1585 | 0.8132 ± 0.1149 |
+| Ablation hapt h1=32 | 0.9262 ± 0.0088 | 0.9212 ± 0.0092 |
+| Ablation hapt h1=64 | 0.9305 ± 0.0047 | 0.9287 ± 0.0081 |
+| Component ecg topo_only | 0.2720 ± 0.1931 | 0.3344 ± 0.1830 |
+| Component hapt topo_only | 0.2184 ± 0.2307 | 0.2355 ± 0.1242 |
+| Regularization ecg reg_only | 0.9139 | 0.9124 |
+| Regularization hapt reg_only | 0.9209 | 0.9264 |
+
+### Key Findings
+
+1. **The 3-seed ablation estimates weren't misleading** — nearly every config's mean moved by ≤1pt between 3 and 10 seeds, well inside either run's standard deviation. Both the component-ablation collapse (`topo_only`/`both` cratering to ~0.2-0.33) and the regularization split (`reg_only` helps ecg, slightly hurts hapt) reproduce in direction and rough magnitude.
+2. **Exception: HAPT's smallest arch config (`h1=16, h2=8, branches=2`) is genuinely unstable, not just under-sampled.** Mean jumped 0.70 → 0.81 between 3 and 10 seeds, but std stayed enormous both times (±0.16, ±0.11) — an order of magnitude above every other config's std (~0.01). This config sits right at HAPT's capacity cliff (see 2026-07-22 finding on the same cliff), so small-seed runs of it should be read as "somewhere between 0.5 and 0.95," not as a point estimate.
+
+---
