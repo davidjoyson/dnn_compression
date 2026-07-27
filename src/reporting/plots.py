@@ -1,9 +1,12 @@
+import math
+
 from src.plots.plot_compression import plot_compression_by_dataset
 from src.plots.plot_ablation import plot_ablation
+from src.plots.plot_accuracy import plot_accuracy
 from src.plots.plot_roc_pr import plot_roc_pr
 from src.plots.plot_training_curves import plot_training_curves
 from src.plots.plot_confusion_matrix import plot_confusion_matrix
-from src.plots.plot_cross_dataset import plot_cross_dataset_summary, plot_cross_dataset_f1
+from src.plots.plot_cross_dataset import plot_cross_dataset_summary, plot_cross_dataset_f1, METHOD_STUBS
 from src.plots.plot_pareto import plot_pareto
 from src.plots.plot_per_class_f1 import plot_per_class_f1
 from src.plots.plot_weight_dist import plot_weight_distribution
@@ -167,6 +170,20 @@ def generate_plots(results):
         if not isinstance(r, dict):
             continue
         slug = name.lower().replace(" ", "_")
+
+        if r.get("accuracy_uncompressed") is not None:
+            try:
+                methods = {}
+                for label, stub in METHOD_STUBS:
+                    v = r.get(f"accuracy{stub}")
+                    if v is None or (isinstance(v, float) and math.isnan(v)):
+                        continue
+                    methods[label] = (v, r.get(f"std{stub}", 0.0))
+                if methods:
+                    plot_accuracy(methods, title=f"Accuracy — {name}", filename=f"{slug}_accuracy.png")
+                    print(f"  {name} accuracy saved")
+            except Exception as e:
+                print(f"  Warning: Could not plot accuracy for {name}: {e}")
 
         if r.get("conf_matrix") is not None and r.get("class_names") is not None:
             try:
