@@ -13,6 +13,7 @@ from src.plots.plot_component_ablation import plot_component_ablation, plot_abla
 from src.plots.plot_compression_delta import plot_compression_delta
 from src.plots.plot_edge_profile import plot_edge_profile
 from src.plots.plot_branch_diversity import plot_branch_diversity
+from src.plots.plot_quantization_robustness import plot_quantization_robustness
 
 
 def generate_plots(results):
@@ -189,6 +190,14 @@ def generate_plots(results):
                 print(f"  {name} branch diversity saved")
             except Exception as e:
                 print(f"  Warning: Could not plot branch diversity for {name}: {e}")
+
+        if r.get("method_comparison") is not None:
+            try:
+                plot_quantization_robustness(r, title=name,
+                                             filename=f"{slug}_quantization_robustness.png")
+                print(f"  {name} quantization robustness saved")
+            except Exception as e:
+                print(f"  Warning: Could not plot quantization robustness for {name}: {e}")
 
         if r.get("weight_dist") is not None:
             try:

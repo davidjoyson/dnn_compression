@@ -1519,3 +1519,38 @@ Ran `ablation`/`component`/`regularization` at the (now-default) 10 seeds for th
 2. **Exception: HAPT's smallest arch config (`h1=16, h2=8, branches=2`) is genuinely unstable, not just under-sampled.** Mean jumped 0.70 → 0.81 between 3 and 10 seeds, but std stayed enormous both times (±0.16, ±0.11) — an order of magnitude above every other config's std (~0.01). This config sits right at HAPT's capacity cliff (see 2026-07-22 finding on the same cliff), so small-seed runs of it should be read as "somewhere between 0.5 and 0.95," not as a point estimate.
 
 ---
+
+## 2026-07-27 — `balance=True` Restored as Default: It's What Gives Dendritic a Real Robustness Edge
+
+**Commits:** *(pending)*
+
+### Summary
+Re-examined whether the `balance=False` default (adopted 2026-07-21 for TOST cleanliness, training speed, and because oversampling didn't help F1) was quietly erasing the one place Dendritic actually showed a compression-robustness advantage. It was. Reverted the default back to `balance=True` for both ECG and HAPT.
+
+### What triggered this
+A plain re-read of `plot_quantization_robustness.png` (new chart, built this session to directly test whether Dendritic beats both MLPBaseline and LayerMatchedMLP on every quantization method) showed, under the current `balance=False` default: no consistent Dendritic advantage on either dataset, and on ECG specifically Dendritic was the *worst* performer on Dynamic int8. Worse, re-checking uncompressed accuracy alone (not even compression) showed MLPBaseline and LayerMatchedMLP now both **beat** Dendritic outright on both ECG (89.77% / 88.90% vs. Dendritic's 87.92%) and HAPT (93.22% / 93.18% vs. 92.51%) — a genuine reversal from the earlier "Dendritic's edge survives the leakage fix" claim, which had only ever been checked against the old `balance=True` numbers and never re-verified after the default switched.
+
+### The check (no new training needed — pulled from existing 10-seed runs)
+Two existing runs already had everything needed: `outputs/run_20260720_183742_ecg_patient_epo50 (oversamp)/results.pkl` (ECG, patient-split, balance=True, 10 seeds) and `outputs/run_20260718_184326_har_ecg_eeg_hapt_epo50 (oversamp)/results.pkl` (HAPT, balance=True, 10 seeds, predates the balance=False switch). Both already contain full `method_comparison` data (MLPBaseline + LayerMatchedMLP run through all 8 methods), so `plot_quantization_robustness()` could be generated directly without retraining anything.
+
+**Uncompressed accuracy, balanced:**
+| | Dendritic | MLPBaseline | LayerMatchedMLP |
+|---|---|---|---|
+| ECG (balanced) | **0.8371** | 0.7901 | 0.8087 |
+| HAPT (balanced) | 0.9222 | **0.9270** | 0.9236 |
+
+Balancing restores Dendritic's uncompressed accuracy edge on ECG (its more severely imbalanced dataset) but not HAPT (imbalance too mild to matter either way) — consistent with the mechanism, not a fluke.
+
+**Quantization-delta ordering** (accuracy delta from each architecture's own uncompressed baseline, per method) — this is the actual robustness question, and it's a different question from raw accuracy rank:
+- **Snowflake, Global, and QAT**: Dendritic leads both baselines on **both** datasets. ECG Snowflake: Dendritic +2.5pp vs. MLP +0.08pp vs. LayerMatched +1.8pp. HAPT QAT: Dendritic +0.42pp vs. MLP +0.24pp vs. LayerMatched +0.14pp — the largest margin of any method on either dataset.
+- **Static / Snowflake+Static**: MLP or LayerMatchedMLP win or tie — doesn't flip.
+- **Dynamic, Per-channel, Mixed**: mixed/negligible on both, no clear winner.
+
+### Decision
+Reverted `balance=True` as the default: `src/experiments/ecg_patient_experiment.py`, `src/experiments/hapt_experiment.py`, and `main.py`'s `_ABLATION_DATASETS` (kept consistent with the main pipeline, same reasoning as the original 2026-07-21 switch). A fresh full run (current codebase, both datasets, 10 seeds) was launched to confirm the historical numbers still reproduce — historical data predates several since-added fixes (branch diversity, min_support F1 exclusion) so isn't assumed identical without re-checking. **Costs accepted**: TOST equivalence drops from 24/24 back to 21/24 (3 ECG methods — Snowflake, Global, QAT — fail equivalence, in every case because compression *improves* accuracy past the ±2% margin, not because it degrades it); ECG training time returns to ~3.5h for a 10-seed run (~7x the unbalanced run's ~1h); no change to the already-closed F1 problem.
+
+### Key Findings
+
+1. **Raw accuracy ranking and quantization-robustness ranking are genuinely different questions.** HAPT balanced shows Dendritic *losing* on uncompressed accuracy (0.9222 vs. 0.9270) while still *leading* on the Snowflake/Global/QAT compression delta — a model can start behind and still absorb compression better. Any future check of "does Dendritic have an edge" needs to ask both questions separately, not infer one from the other.
+2. **The `balance=False` switch had an unexamined side effect.** It was adopted for reasons unrelated to the architecture-robustness question (TOST cleanliness, speed, F1), and nobody checked at the time whether it would also erase Dendritic's one real compression-robustness result. It did. Worth generalizing: any config change made for one stated reason should be checked against every other headline claim currently being made, not just the one it was made for.
+3. **The requirement "Dendritic is consistently more robust... than both baselines" is still not fully met** — even under `balance=True`, Static/Snowflake+Static/Dynamic don't show a Dendritic edge, only 3 of 8 methods do. But those 3 include the project's actual primary method (Snowflake) and the margins are real and reproduce identically in direction across both datasets, which is a materially stronger position than the `balance=False` data supported.

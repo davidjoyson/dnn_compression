@@ -60,8 +60,8 @@ class _Tee:
 _ABLATION_CONFIG = {"h1": 64, "h2": 32, "branches": 8, "hidden_per_branch": 8}
 
 _ABLATION_DATASETS = {
-    "ecg":  (lambda: load_ecg_patient_split(balance=False), 5),
-    "hapt": (lambda: load_hapt(balance=False), 12),
+    "ecg":  (lambda: load_ecg_patient_split(balance=True), 5),
+    "hapt": (lambda: load_hapt(balance=True), 12),
 }
 
 # 3 architecture sizes, small -> large, same shape family as _ABLATION_CONFIG

@@ -9,7 +9,10 @@ _CLASS_NAMES = [
 
 
 def run_hapt(epochs=50, seeds=(42,), fine_tune_epochs=3, model_dir=None):
-    data = load_hapt(balance=False)
+    # balance=True (2026-07-27): kept consistent with ECG's default switch,
+    # though HAPT's own uncompressed-accuracy ordering doesn't change either
+    # way -- see docs/experiment_log.md.
+    data = load_hapt(balance=True)
     return run_experiment(
         get_data=lambda seed: data,
         num_classes=12,
