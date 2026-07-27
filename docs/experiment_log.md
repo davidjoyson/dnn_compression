@@ -1571,3 +1571,29 @@ The fresh 10-seed run launched above (`outputs/run_20260727_162834_ecg_hapt_epo5
 README's Results table and Core Finding paragraph updated with the corrected HAPT numbers; the "being re-confirmed" caveat removed.
 
 4. **A historical run being internally self-consistent (clean std, plausible numbers) doesn't mean it reflects the current codebase.** ECG's historical pkl happened to postdate the last major training-code change and ended up trustworthy; HAPT's predated it and wasn't, and nothing about either pkl signaled which was which without diffing commit dates against run timestamps. Re-run confirmation checks are cheap insurance against this — worth doing before any historical run gets quoted in a doc, not just when consolidating a config change.
+
+### Follow-up: HAPT reverted to `balance=False` — oversampling was actively hurting it
+
+The confirmation run above surfaced the corrected HAPT numbers (72.5% Dendritic uncompressed, ±5.7% seed std) but didn't question whether `balance=True` was still the right call for HAPT specifically — it had just been carried over from the ECG decision for consistency. Comparing the fresh `balance=True` run against the existing `balance=False` run (`outputs/run_20260724_151228_ecg_hapt_epo50`, already on the post-`d5a70b6` codebase, no retraining needed) settled it:
+
+| Method | `balance=True` | `balance=False` | Gap |
+|---|---|---|---|
+| Uncompressed | 72.50% ±5.71% | 92.51% ±0.74% | +20.0pp |
+| Snowflake | 73.01% ±5.78% | 92.77% ±0.56% | +19.8pp |
+| MLP Baseline | 84.09% ±1.50% | 93.22% ±0.30% | +9.1pp |
+
+Oversampling HAPT's rare postural-transition classes (23–90 train examples each, duplicated up to match the majority classes) craters Dendritic's accuracy ~20pp and inflates its seed variance ~8×; MLP is hurt too but far less (~9pp, ~5×). This is the opposite of ECG, where oversampling *helps* (ECG's majority class is ~89% of beats — severe enough that skipping oversampling erases Dendritic's edge; see above). Two different datasets, two different imbalance severities, two opposite correct answers.
+
+Checked whether `balance=False` also preserves the Snowflake/Global/QAT robustness finding (the actual point of oversampling HAPT in the first place) — it does, and more cleanly than `balance=True` did:
+
+| Method | Dendritic Δ | MLP Δ | LayerMatchedMLP Δ |
+|---|---|---|---|
+| Snowflake | +0.26pp | −0.02pp | −0.00pp |
+| Global | +0.23pp | −0.05pp | −0.02pp |
+| QAT | +0.29pp | −0.10pp | −0.15pp |
+
+Under `balance=False`, both baselines go slightly *negative* under Snowflake/Global/QAT while Dendritic stays positive on all three — a cleaner separation than the noisy `balance=True` deltas ever showed. TOST is unaffected (still 8/8 EQUIV on HAPT). `balance=False` is a strict improvement for HAPT: normal accuracy, normal variance, same 8/8 TOST, and a *better* robustness story.
+
+**Decision:** `src/experiments/hapt_experiment.py` and `main.py`'s `_ABLATION_DATASETS["hapt"]` reverted to `balance=False`; `balance=True` stays only on ECG (`src/experiments/ecg_patient_experiment.py`). No retraining was needed — the canonical merged run (`outputs/run_20260727_204917_ecg_balanced_hapt_unbalanced/results.pkl`) combines ECG's `balance=True` results from the confirmation run above with HAPT's `balance=False` results from the pre-existing `run_20260724_151228` run. README's Results table, Core Finding paragraph, and the balance-history paragraph updated accordingly.
+
+**Key finding:** oversampling is not a one-size-fits-all fix for imbalance — its effect depends on how few examples the rarest class actually has (HAPT's rarest transition class has ~23-90 train examples vs. ECG's rarer classes still having hundreds+), and it needs to be checked per-dataset, not assumed to transfer from whichever dataset motivated turning it on.
