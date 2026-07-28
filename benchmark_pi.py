@@ -53,6 +53,13 @@ LOADERS = {
     "hapt": load_hapt,
 }
 
+# Must match each dataset's canonical training config (see docs/experiment_log.md,
+# 2026-07-27 entries) -- ECG is balance=True, HAPT is balance=False.
+BALANCE = {
+    "ecg":  True,
+    "hapt": False,
+}
+
 
 def make_model(input_dim, num_classes):
     return DendriticNetwork(input_dim=input_dim, hidden_neurons1=64,
@@ -125,7 +132,7 @@ def _run(args):
     model_dir = args.model_dir or os.path.join("models", args.dataset)
 
     # Load train + test data (train needed for QAT/calibration)
-    X_tr_np, y_tr_np, X_te_np, y_te_np = LOADERS[args.dataset]()
+    X_tr_np, y_tr_np, X_te_np, y_te_np = LOADERS[args.dataset](balance=BALANCE[args.dataset])
     X_tr = torch.tensor(X_tr_np, dtype=torch.float32)
     y_tr = torch.tensor(y_tr_np, dtype=torch.long)
     X_all = torch.tensor(X_te_np, dtype=torch.float32)
