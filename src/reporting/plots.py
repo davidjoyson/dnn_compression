@@ -185,6 +185,20 @@ def generate_plots(results):
             except Exception as e:
                 print(f"  Warning: Could not plot accuracy for {name}: {e}")
 
+        if r.get("f1_uncompressed") is not None:
+            try:
+                methods = {}
+                for label, stub in METHOD_STUBS:
+                    v = r.get(f"f1{stub}")
+                    if v is None or (isinstance(v, float) and math.isnan(v)):
+                        continue
+                    methods[label] = (v, r.get(f"std_f1{stub}", 0.0))
+                if methods:
+                    plot_accuracy(methods, title=f"Macro F1 — {name}", filename=f"{slug}_f1.png", ylabel="Macro F1")
+                    print(f"  {name} F1 saved")
+            except Exception as e:
+                print(f"  Warning: Could not plot F1 for {name}: {e}")
+
         if r.get("conf_matrix") is not None and r.get("class_names") is not None:
             try:
                 plot_per_class_f1(r["conf_matrix"], r["class_names"],

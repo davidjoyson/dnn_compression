@@ -17,8 +17,10 @@ def plot_confusion_matrix(conf_matrix_data, title="", filename=None, class_names
 
     n_plots = len(matrices)
     subtitles = {"uncompressed": "Uncompressed", "compressed": "Snowflake (int8)"}
+    n_classes = next(iter(matrices.values())).shape[0]
+    cell_size = max(0.45, min(0.75, 6.0 / n_classes))
 
-    fig, axes = plt.subplots(1, n_plots, figsize=(4.5 * n_plots, 4.2))
+    fig, axes = plt.subplots(1, n_plots, figsize=(n_classes * cell_size * n_plots, n_classes * cell_size))
     if n_plots == 1:
         axes = [axes]
 
@@ -41,10 +43,11 @@ def plot_confusion_matrix(conf_matrix_data, title="", filename=None, class_names
         ax.spines["right"].set_visible(False)
 
         thresh = 0.5
+        cell_text = (lambda v, c: f"{v:.2f}") if n > 6 else (lambda v, c: f"{v:.2f}\n({c})")
         for i in range(n):
             for j in range(n):
                 color = "white" if cm_norm[i, j] > thresh else "#333333"
-                ax.text(j, i, f"{cm_norm[i, j]:.2f}\n({cm[i, j]})",
+                ax.text(j, i, cell_text(cm_norm[i, j], cm[i, j]),
                         ha="center", va="center", fontsize=7.5, color=color)
 
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)

@@ -40,22 +40,16 @@ from src.compression.compression_pipeline import (
     compress_model_qat,
     compress_model_snowflake_static,
 )
-from src.loaders.load_har  import load_har
 from src.loaders.load_ecg_patient_split import load_ecg_patient_split
-from src.loaders.load_eeg  import load_eeg
 from src.loaders.load_hapt import load_hapt
 
 DATASETS = {
-    "har":  (561,  6),
     "ecg":  (187,  5),
-    "eeg":  (2548, 3),
     "hapt": (561,  12),
 }
 
 LOADERS = {
-    "har":  load_har,
     "ecg":  load_ecg_patient_split,
-    "eeg":  load_eeg,
     "hapt": load_hapt,
 }
 

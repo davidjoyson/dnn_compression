@@ -11,33 +11,26 @@ def plot_accuracy(methods, title="Accuracy Comparison", filename="accuracy.png",
     """
     apply_style()
 
-    labels, values, stds = [], [], []
+    labels, values = [], []
     for label, entry in methods.items():
-        if isinstance(entry, (list, tuple)):
-            v, s = entry[0], entry[1]
-        else:
-            v, s = entry, 0.0
+        v = entry[0] if isinstance(entry, (list, tuple)) else entry
         if math.isnan(v):
             continue
         labels.append(label)
         values.append(v)
-        stds.append(s)
 
     if not labels:
         return
 
     colors = [METHOD_COLORS.get(lbl, PALETTE[i % len(PALETTE)]) for i, lbl in enumerate(labels)]
-    has_err = any(s > 0 for s in stds)
     baseline = values[0]
 
-    fig, ax = plt.subplots(figsize=(max(5.5, len(labels) * 1.55), 4.8))
+    fig, ax = plt.subplots(figsize=(max(3.2, len(labels) * 0.9), 5.0))
+    ax.grid(False)
 
     bars = ax.bar(
         labels, values,
         color=colors,
-        yerr=[s if s > 0 else float("nan") for s in stds] if has_err else None,
-        capsize=5,
-        error_kw={"elinewidth": 1.5, "ecolor": "#555555", "capthick": 1.5},
         width=0.55,
         zorder=3,
         edgecolor="white",
@@ -47,17 +40,16 @@ def plot_accuracy(methods, title="Accuracy Comparison", filename="accuracy.png",
     # Dashed reference line at uncompressed baseline
     ax.axhline(baseline, color="#666666", linestyle="--", linewidth=1.0, zorder=2, alpha=0.6)
 
-    err_top = max(stds) if has_err else 0.0
     y_min = max(0.0, min(values) - 0.06)
-    y_max = min(1.0, max(values) + err_top + 0.10)
+    y_max = min(1.0, max(values) + 0.10)
     ax.set_ylim(y_min, y_max)
     ax.set_ylabel(ylabel)
     ax.set_title(title, pad=24)
     plt.xticks(rotation=20, ha="right")
 
     tick_h = (y_max - y_min) * 0.015
-    for i, (lbl, v, s) in enumerate(zip(labels, values, stds)):
-        top = v + (s if s > 0 else 0) + tick_h
+    for i, (lbl, v) in enumerate(zip(labels, values)):
+        top = v + tick_h
         ax.text(i, top, f"{v:.4f}", ha="center", va="bottom", fontsize=8.5, fontweight="bold")
         if i > 0:
             delta = v - baseline

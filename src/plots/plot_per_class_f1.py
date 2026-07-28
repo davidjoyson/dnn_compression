@@ -16,23 +16,8 @@ def _f1_from_cm(cm):
     return f1s
 
 
-def plot_per_class_f1(conf_matrix_dict, class_names, title="", filename=None):
-    """
-    conf_matrix_dict: {"uncompressed": cm_array, "compressed": cm_array}
-    Grouped bar chart showing per-class F1 before and after Snowflake compression.
-    """
-    apply_style()
-
-    cm_u = conf_matrix_dict.get("uncompressed")
-    cm_c = conf_matrix_dict.get("compressed")
-    if cm_u is None:
-        return
-
-    f1_u = _f1_from_cm(cm_u)
-    f1_c = _f1_from_cm(cm_c) if cm_c is not None else None
-    n = len(f1_u)
-    names = class_names if class_names and len(class_names) == n else [f"Class {i}" for i in range(n)]
-
+def _plot_chunk(names, f1_u, f1_c, title, filename):
+    n = len(names)
     x = np.arange(n)
     width = 0.35
     fig, ax = plt.subplots(figsize=(max(6, n * 1.4), 4.5))
@@ -57,6 +42,33 @@ def plot_per_class_f1(conf_matrix_dict, class_names, title="", filename=None):
         for i, v in enumerate(f1_c):
             ax.text(i + width / 2, v + tick_h, f"{v:.2f}", ha="center", va="bottom", fontsize=8)
 
-    if filename is None:
-        filename = f"{title.lower().replace(' ', '_')}_per_class_f1.png"
     save_fig(filename)
+
+
+def plot_per_class_f1(conf_matrix_dict, class_names, title="", filename=None, max_per_plot=6):
+    """
+    conf_matrix_dict: {"uncompressed": cm_array, "compressed": cm_array}
+    Grouped bar chart showing per-class F1 before and after Snowflake compression.
+    Splits into multiple files of up to `max_per_plot` classes each when there
+    are more classes than that (e.g. HAPT's 12 classes -> two 6-class charts).
+    """
+    apply_style()
+
+    cm_u = conf_matrix_dict.get("uncompressed")
+    cm_c = conf_matrix_dict.get("compressed")
+    if cm_u is None:
+        return
+
+    f1_u = _f1_from_cm(cm_u)
+    f1_c = _f1_from_cm(cm_c) if cm_c is not None else None
+    n = len(f1_u)
+    names = class_names if class_names and len(class_names) == n else [f"Class {i}" for i in range(n)]
+
+    base = filename or f"{title.lower().replace(' ', '_')}_per_class_f1.png"
+    stem, dot, ext = base.rpartition(".")
+
+    chunks = [(i, min(i + max_per_plot, n)) for i in range(0, n, max_per_plot)]
+    for part, (start, end) in enumerate(chunks, 1):
+        chunk_filename = base if len(chunks) == 1 else f"{stem}_pt{part}.{ext}"
+        f1_c_chunk = f1_c[start:end] if f1_c is not None else None
+        _plot_chunk(names[start:end], f1_u[start:end], f1_c_chunk, title, chunk_filename)
