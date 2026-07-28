@@ -20,7 +20,7 @@ import time
 
 import torch
 
-from benchmark_pi import DATASETS, LOADERS, make_model, BACKEND
+from benchmark_pi import DATASETS, LOADERS, BALANCE, make_model, BACKEND
 from src.compression.compression_pipeline import (
     compress_model, decompress_model,
     compress_model_global,
@@ -153,7 +153,7 @@ def main():
     input_dim, num_classes = DATASETS[args.dataset]
     model_dir = args.model_dir or os.path.join("models", args.dataset)
 
-    X_tr_np, y_tr_np, X_te_np, y_te_np = LOADERS[args.dataset]()
+    X_tr_np, y_tr_np, X_te_np, y_te_np = LOADERS[args.dataset](balance=BALANCE[args.dataset])
     X_tr = torch.tensor(X_tr_np, dtype=torch.float32)
     y_tr = torch.tensor(y_tr_np, dtype=torch.long)
     X_sample = torch.tensor(X_te_np[:1], dtype=torch.float32)
