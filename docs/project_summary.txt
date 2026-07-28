@@ -105,7 +105,7 @@ KEY FINDINGS
    give ~1.8-2.2x real latency speedup; Snowflake (weight-only) gives ~1.0x despite 4x
    storage compression. Memory usage does not trade off consistently against speed
    (dataset-dependent, not a universal rule). No thermal throttling risk under 15 min
-   sustained load (steady-state 46.2C, no active cooling).
+   sustained load (steady-state ~48C, no active cooling).
 
 8. Architecture-size ablation (h1=16/32/64) shows the expected tiny-model capacity cliff
    on HAR and HAPT (accuracy craters with huge seed variance) but it's nearly invisible
@@ -144,9 +144,11 @@ WHAT WAS EXPLORED AND RULED OUT
 EDGE DEPLOYMENT (Raspberry Pi 3, real hardware, qnnpack backend)
 -------------------------------------------------------------------
   Dataset   Float32    Snowflake(int8)   Static W+A(int8)   Snowflake+Static(int8)
-  HAR       9.01 ms    9.25 ms (0.97x)   4.62 ms (1.95x)    4.54 ms (1.98x)
-  ECG       8.30 ms    8.33 ms (1.00x)   4.61 ms (1.80x)    4.70 ms (1.77x)
-  HAPT      8.88 ms    9.02 ms (0.99x)   4.52 ms (1.97x)    4.56 ms (1.95x)
+  ECG       8.00 ms    8.06 ms (0.99x)   4.23 ms (1.89x)    4.21 ms (1.90x)
+  HAPT      8.38 ms    8.43 ms (0.99x)   4.38 ms (1.91x)    4.32 ms (1.94x)
+
+  HAR excluded (no longer in the default pipeline); its last real-hardware run is
+  archived in benchmark_pi_output/archive/, not re-verified against current code.
 
   Full 10-method comparison, memory profiling, batch=-1 vs batch=1, and a real-hardware
   Pareto chart are in benchmark_pi_output/ (python plot_pi_benchmark.py). Not yet

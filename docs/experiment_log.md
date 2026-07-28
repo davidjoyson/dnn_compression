@@ -1597,3 +1597,41 @@ Under `balance=False`, both baselines go slightly *negative* under Snowflake/Glo
 **Decision:** `src/experiments/hapt_experiment.py` and `main.py`'s `_ABLATION_DATASETS["hapt"]` reverted to `balance=False`; `balance=True` stays only on ECG (`src/experiments/ecg_patient_experiment.py`). No retraining was needed — the canonical merged run (`outputs/run_20260727_204917_ecg_balanced_hapt_unbalanced/results.pkl`) combines ECG's `balance=True` results from the confirmation run above with HAPT's `balance=False` results from the pre-existing `run_20260724_151228` run. README's Results table, Core Finding paragraph, and the balance-history paragraph updated accordingly.
 
 **Key finding:** oversampling is not a one-size-fits-all fix for imbalance — its effect depends on how few examples the rarest class actually has (HAPT's rarest transition class has ~23-90 train examples vs. ECG's rarer classes still having hundreds+), and it needs to be checked per-dataset, not assumed to transfer from whichever dataset motivated turning it on.
+
+---
+
+## 2026-07-28 — Fresh Raspberry Pi Benchmark: Stale Checkpoints, Wrong Balance Config, and a Broken Import Chain
+
+**Commits:** *(pending)*
+
+### Summary
+Re-ran `benchmark_pi.py` on the physical Pi 3 (`apollo`, aarch64) to get real-hardware numbers matching the current codebase. The existing Pi deployment and its cached results turned out to be stale on multiple independent axes, all fixed in this session:
+
+1. **`models/ecg` and `models/hapt` (both local and on the Pi) held Jul 8/14 checkpoints** — trained before the `d5a70b6` `base_experiment.py` rewrite and before either `balance` decision. Refreshed to the current-canonical pair: ECG from `run_20260727_162834_ecg_hapt_epo50` (`balance=True`), HAPT from `run_20260724_151228_ecg_hapt_epo50` (`balance=False`) — same source split as the canonical merged results.pkl. `models/har` and `models/eeg` deleted (both datasets already dropped from `main.py`).
+2. **`benchmark_pi.py` never passed `balance=` to the loaders**, silently using each loader's own default (`True` for both) — correct for ECG by coincidence, wrong for HAPT. Added an explicit `BALANCE = {"ecg": True, "hapt": False}` dict and wired it into the loader call. Also dropped `har`/`eeg` from `DATASETS`/`LOADERS` (loader files still exist but are no longer part of the pipeline).
+3. **The Pi's `data/ecg` cache was the old non-patient-split format** (`X_train.npy` etc., no `_patient` suffix) — missing entirely, which would have silently fallen through to raw `wfdb` parsing (not installed, no raw MIT-BIH data present). Explains why the Pi's archived `results_ecg.csv` showed **97.36% accuracy** — the old leaky split, not the real ~83–87% patient-split number. Synced the correct `_patient`-suffixed `.npy` cache files (and HAPT's unbalanced train cache) from the dev machine.
+4. **`load_ecg_patient_split.py` imports `wfdb` at module level**, so the script crashed on import even though the cache path never needed it. Installed `wfdb` on the Pi (`pip3 install wfdb`) to fix the import, independent of the cache-file fix above.
+5. Old Pi-side and local `results_ecg.csv`/`results_hapt.csv` (both stale per #3) archived rather than overwritten in place — `outputs/archive/` on the Pi, `benchmark_pi_output/archive/` and `final_output/pi_benchmark/archive/` locally. `results_har.csv`/`results_eeg.csv` archived alongside them since both datasets are no longer active.
+
+### Fresh results (batch=1, single-sample latency)
+
+| Dataset | Float32 baseline | Snowflake (int8) | Static W+A (int8) | Snowflake+Static (int8) |
+|---|---|---|---|---|
+| ECG  | 8.00 ms | 8.06 ms (0.99×) | 4.23 ms (1.89×) | 4.21 ms (1.90×) |
+| HAPT | 8.38 ms | 8.43 ms (0.99×) | 4.38 ms (1.91×) | 4.32 ms (1.94×) |
+
+Same qualitative pattern as before (Snowflake ~1.0×, true-INT8 methods ~1.9×, Dynamic's speedup flips with batch size, memory tradeoff is dataset-dependent) — the fix corrected the underlying numbers, not the story. README's Edge Deployment table and surrounding paragraphs updated; HAR row removed.
+
+**Accuracy note:** the Pi benchmark evaluates one specific trained checkpoint (whichever seed `main.py` happened to save), not the 10-seed mean reported elsewhere — ECG showed 87.1% here vs. the 83.71% 10-seed mean (~1.5σ, σ=2.21%), HAPT showed 93.5% vs. 92.51% (~1.3σ, σ=0.74%). Both are within normal seed-to-seed variance, not a discrepancy.
+
+### Key finding
+A "real hardware" benchmark script can go stale in layers that don't show up as errors individually: wrong checkpoint, wrong data-loading config, wrong cached data format, and a broken-but-latent import all coexisted on the Pi without any of them throwing until the missing `_patient` cache forced a fallback path that finally surfaced `wfdb`'s absence. The `balance=` bug in particular would have run silently to completion and produced plausible-looking but wrong numbers — worth specifically checking "does this script pass through every config flag the training pipeline cares about" whenever a benchmark/deployment script wraps loaders it doesn't own.
+
+### Follow-up: thermal_test.py had the same balance= bug; rerun with the fix
+
+`thermal_test.py` imports `benchmark_pi.py`'s `LOADERS` and calls it the same unqualified way (`LOADERS[args.dataset]()`), so it had the identical latent `balance=True`-for-HAPT bug. Fixed by importing and using the same `BALANCE` dict. Since throughput/thermal behavior only depends on model architecture and op count (not weight values or calibration data), this fix doesn't change what's being measured — but reran anyway for full consistency with the refreshed checkpoints.
+
+Old log (`thermal_logs/ecg_snowflake_static.csv`, run against the stale pre-rewrite checkpoint) archived to `thermal_logs/archive/`. Fresh 15-minute run (`--duration 900`, current checkpoint):
+
+- **225.9 inf/s sustained** (203,294 inferences / 900s) — matches the old 229 inf/s within noise, as expected (throughput isn't checkpoint-dependent).
+- **Temperature plateau is higher than previously documented**: mean **47.97°C** from the 5-minute mark onward (range 46.2–48.9°C), not the old single-point "46.2°C steady-state" claim — that number was apparently the coolest reading in the plateau, not its mean. Still comfortably below the ~80°C throttle threshold; the "no throttling risk" conclusion is unchanged, only the specific figure was corrected. README and `project_summary.txt` updated (~48°C).
