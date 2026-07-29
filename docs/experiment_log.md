@@ -1635,3 +1635,49 @@ Old log (`thermal_logs/ecg_snowflake_static.csv`, run against the stale pre-rewr
 
 - **225.9 inf/s sustained** (203,294 inferences / 900s) — matches the old 229 inf/s within noise, as expected (throughput isn't checkpoint-dependent).
 - **Temperature plateau is higher than previously documented**: mean **47.97°C** from the 5-minute mark onward (range 46.2–48.9°C), not the old single-point "46.2°C steady-state" claim — that number was apparently the coolest reading in the plateau, not its mean. Still comfortably below the ~80°C throttle threshold; the "no throttling risk" conclusion is unchanged, only the specific figure was corrected. README and `project_summary.txt` updated (~48°C).
+
+---
+
+## 2026-07-28 (cont.) — Fresh 10-Seed Ablation/Component/Regularization Suite Under Current Balance Config
+
+**Commits:** *(pending)*
+
+### Summary
+Re-ran the full ablation suite (`main.py --exp ablation component regularization`, 10 seeds, 50 epochs) — last run 2026-07-25, before the `balance=True` (ECG) / `balance=False` (HAPT) config was finalized. Took 14h07m44s (50,864 sec) total, ~3.79x the 2026-07-25 unbalanced baseline's 3h43m43s — consistent with the ~3.3-3.7x ECG-balancing slowdown already measured on the main experiment. Per-stage: Ablation 21331.80s (3.68x), Component 9744.44s (4.04x), Regularization 19776.70s (3.80x). Run: `outputs/run_20260728_091256_ablation_component_regularization_epo50`.
+
+### Results
+
+**Architecture-size ablation:**
+
+| Config | ECG acc_u | ECG acc_c | HAPT acc_u | HAPT acc_c |
+|---|---|---|---|---|
+| h1=16 h2=8 br=2 | 0.6660 ± 0.0398 | 0.6634 ± 0.0532 | 0.8132 ± 0.1149 | 0.8059 ± 0.1139 |
+| h1=32 h2=16 br=4 | 0.7823 ± 0.0352 | 0.7809 ± 0.0380 | 0.9212 ± 0.0092 | 0.9206 ± 0.0095 |
+| h1=64 h2=32 br=6 | 0.8268 ± 0.0124 | 0.8268 ± 0.0139 | 0.9287 ± 0.0081 | 0.9285 ± 0.0082 |
+
+**Component ablation** (default config h1=64/h2=32/branches=8):
+
+| Condition | ECG acc | HAPT acc |
+|---|---|---|
+| none | 0.8534 ± 0.0150 | 0.9301 ± 0.0037 |
+| topo_only (branch weights tied) | 0.3821 ± 0.1433 | 0.2355 ± 0.1242 |
+| quant_only | 0.8531 ± 0.0157 | 0.9299 ± 0.0038 |
+| both | 0.3830 ± 0.1453 | 0.2300 ± 0.1232 |
+
+**Regularization ablation:**
+
+| Condition | ECG acc | HAPT acc |
+|---|---|---|
+| none | 0.8534 ± 0.0150 | 0.9301 ± 0.0037 |
+| quant_only | 0.8531 ± 0.0157 | 0.9299 ± 0.0038 |
+| reg_only (weight_decay=1e-3, float32) | 0.7759 ± 0.0366 | 0.9264 ± 0.0071 |
+
+### Key findings
+
+1. **HAPT reproduced exactly** (unaffected by this session's changes, `balance=False` unchanged) — every HAPT number matches the 2026-07-25 baseline to 4 decimal places. Good reproducibility sanity check.
+
+2. **ECG's small-model capacity cliff is far more severe under `balance=True`.** The `h1=16` config drops 23.1pp (89.7%→66.6%) vs. the old unbalanced run's near-flat result, while the largest config drops only 6.1pp (88.8%→82.7%). Oversampled training data appears to exceed what under-parameterized dendritic networks can fit. This also reverses the README/project_summary claim that ECG's ablation collapse was "nearly invisible" — that was true only under the old `balance=False` default, which floored raw accuracy at the ~89% majority-class rate regardless of whether the model learned anything. Under `balance=True` that floor is gone and the cliff is now the most dramatic of either dataset. Both docs updated.
+
+3. **Component ablation reconfirms branch diversity (not redundancy) is load-bearing**, now under the current balance config: quantization alone changes accuracy by <0.03pp on either dataset; forcing the 8 branches to share weights collapses accuracy to 0.382 (ECG) / 0.236 (HAPT), and quantizing on top of that collapse changes nothing further. Matches the previously-documented (lower-seed-count, pre-balance-change) finding.
+
+4. **New, unexplained result: ECG's `reg_only` collapses disproportionately under `balance=True`.** Weight decay alone (float32, no quantization) drops ECG accuracy to 77.6% — a 13.7pp fall from baseline, vs. `quant_only`'s ~0.03pp change in the *same* run, and vs. `reg_only`'s own ~0pp cost under the old unbalanced config (91.24%, effectively free). Weight decay and oversampling appear to interact destructively on ECG specifically — not just "the general balance-induced accuracy hit," since `none` and `quant_only` in the same run only lost ~2.8pp. HAPT is unaffected (`reg_only` costs 0.37pp, as before). Mechanism not yet identified — candidates: a fixed `weight_decay=1e-3` may be miscalibrated for the oversampled effective dataset size, or the patient-split's smaller unique-sample count compounds with regularization differently than duplicated majority-class examples. Flagged as open, not resolved — next step would be a weight_decay sweep before treating this as a settled finding.

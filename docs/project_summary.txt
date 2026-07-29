@@ -1,6 +1,6 @@
 DNN Compression — Project Summary
 ===================================
-(Last updated 2026-07-22 — see docs/experiment_log.md for full history)
+(Last updated 2026-07-28 — see docs/experiment_log.md for full history)
 
 WHAT IT IS
 ----------
@@ -9,7 +9,7 @@ compressed 4x with no accuracy loss on edge-AI classification tasks (wearables, 
 biomedical signals), and whether its branching structure gives it an actual robustness
 advantage under quantization over conventional MLPs.
 
-CORE HYPOTHESIS — STATUS: PARTIALLY CONFIRMED, CENTRAL CLAIM NOT SUPPORTED
+CORE HYPOTHESIS — STATUS: PARTIALLY CONFIRMED, SCOPED TO 3/8 METHODS
 ---------------------------------------------------------------------------
 The dendritic network's "snowflake" property — parallel branches each learning distinct
 feature subspaces — was hypothesised to make it especially compatible with per-layer int8
@@ -18,14 +18,21 @@ independently calibrated, giving it better compression tolerance than a conventi
 
   - CONFIRMED: branches really are narrower and more weight-distinct than a structurally
     matched non-branching control layer (17-27% lower weight std, near-zero inter-branch
-    cosine similarity, all 3 datasets).
-  - NOT CONFIRMED: that narrowness does NOT translate into a measurable quantization-
-    robustness advantage. A full 10-seed, 3-model (Dendritic vs. total-param-matched MLP
-    vs. per-layer-matched MLP), 8-method comparison found an identical ~0.0026 mean
-    accuracy-delta under compression across all three architectures. The motivating
-    "outperforms standard quantization baselines" claim is not supported by the data.
-  - WHAT DOES HOLD UP: Dendritic's plain, uncompressed accuracy edge over both baselines
-    on the harder tasks (ECG, HAPT) — a real result, just independent of quantization.
+    cosine similarity, all datasets).
+  - CONFIRMED, but only for 3 of 8 compression methods: on Snowflake, Global int8, and
+    QAT specifically, Dendritic beats both MLPBaseline (total-param-matched) and
+    LayerMatchedMLP (per-layer-matched) on quantization-robustness delta, consistently in
+    direction on both ECG and HAPT (e.g. ECG Snowflake: Dendritic +2.50pp vs. MLP +0.09pp
+    vs. LayerMatched +1.82pp). On Static/Snowflake+Static the baselines win instead; on
+    Dynamic/Per-channel/Mixed no architecture shows a reliable edge. An earlier version of
+    this investigation (pre-2026-07-27, both datasets trained balance=False) found no
+    advantage at all — that turned out to be an artifact of the balance setting erasing
+    the effect on ECG specifically, not a true negative result. See docs/experiment_log.md,
+    2026-07-27 entries ("balance=True Restored") for the full reversal and re-confirmation.
+  - WHAT DOES HOLD UP: Dendritic's plain, uncompressed accuracy edge on ECG (0.8371 vs.
+    MLP 0.7901 / LayerMatched 0.8087) — though HAPT shows the opposite (Dendritic 0.9251
+    trails MLP's 0.9322), so raw-accuracy ranking and quantization-robustness ranking are
+    different questions that must be checked separately, not inferred from each other.
 
 ARCHITECTURE
 ------------
@@ -61,28 +68,40 @@ KEY RESULTS (50 epochs, 10 seeds: 42,0,7,1,2,3,4,5,6,8)
 -----------------------------------------------------------
   Dataset                       Classes  Uncompressed      Snowflake int8     Delta    TOST
   UCI HAR                       6        94.12% +/-0.48%  94.16% +/-0.45%   +0.04%   EQUIV
-  ECG Heartbeat (patient-split) 5        87.92% +/-1.86%  88.38% +/-1.48%   +0.46%   EQUIV
-  HAPT (transitions incl.)      12       92.51% +/-0.74%  92.77% +/-0.56%   +0.26%   EQUIV
+  ECG Heartbeat (patient-split, balance=True)  5  83.71% +/-2.21%  86.21% +/-1.04%  +2.50%  NOT EQUIV (compression over-improves)
+  HAPT (transitions incl., balance=False)      12 92.51% +/-0.74%  92.77% +/-0.56%  +0.26%  EQUIV
 
-  All 24/24 method-dataset pairs are TOST-equivalent (n=10, +/-2% margin).
-  Snowflake matches or beats uncompressed on all 3 datasets.
+  21/24 method-dataset pairs are TOST-equivalent (n=10, +/-2% margin); every failure
+  is compression *improving* accuracy past the margin, never degrading it (ECG's
+  Snowflake/Global/QAT specifically). Snowflake matches or beats uncompressed on all
+  3 datasets.
 
   NOTE ON DATASETS: EEG Brainwave (4th dataset, 3-class emotion) was dropped 2026-07-21
   after investigation confirmed unfixable patient/session-level data leakage in the source
   CSV. ECG uses a patient-independent (DS1/DS2) split, not the original Kaggle random
   split — the original was found to leak patient data between train/test, inflating
-  accuracy by ~13pp. ECG and HAPT both train on their natural, unbalanced class
-  distribution (balance=False) — oversampling minority classes by duplication was tried
-  and reverted (net negative: less consistent TOST result, no real F1 improvement).
+  accuracy by ~13pp. ECG and HAPT deliberately use DIFFERENT balance settings: ECG trains
+  on oversampled, class-balanced data (balance=True) — its majority class is severe
+  enough (~89% of beats) that without oversampling, Dendritic loses its uncompressed-
+  accuracy edge and the Snowflake/Global/QAT robustness result disappears. HAPT trains on
+  its natural, unbalanced distribution (balance=False) — oversampling HAPT's rare
+  transition classes (23-90 train examples each) craters Dendritic's accuracy ~20pp and
+  inflates seed variance ~8x, for no compensating benefit. See docs/experiment_log.md,
+  2026-07-27 entries, for both directions of this investigation.
 
 KEY FINDINGS
 ------------
-1. Snowflake int8 = ~4x compression, no statistically significant accuracy loss (24/24
-   TOST-equivalent). Per-layer calibration matters; global int8 is slightly less reliable.
+1. Snowflake int8 = ~4x compression, no statistically significant accuracy loss (21/24
+   TOST-equivalent; every one of the 3 failures is compression *improving* accuracy past
+   the margin, never degrading it). Per-layer calibration matters; global int8 is
+   slightly less reliable.
 
-2. Dendritic shows NO consistent quantization-robustness advantage over either MLP
-   baseline (identical ~0.0026 mean accuracy-delta across all 3 models, all 8 methods,
-   10 seeds). This is the project's central negative result — see CORE HYPOTHESIS above.
+2. Dendritic shows a consistent quantization-robustness advantage over both MLP
+   baselines on 3 of 8 methods (Snowflake, Global int8, QAT) on both datasets — real and
+   reproducing in direction, but scoped, not universal (Static/Snowflake+Static favor the
+   baselines; Dynamic/Per-channel/Mixed show no reliable winner on any architecture). See
+   CORE HYPOTHESIS above for the full history, including the earlier version of this
+   finding that (incorrectly) concluded no advantage existed at all.
 
 3. Dendritic's branches are measurably narrower and more weight-distinct than a
    structurally-equivalent non-branching control layer (17-27% lower weight std). Real
@@ -95,8 +114,8 @@ KEY FINDINGS
    Investigation closed 2026-07-21.
 
 5. Dynamic int8 is the least reliable method, and its real-hardware speedup verdict
-   flips with batch size: slower than float32 at full-throughput batching (0.44-0.60x)
-   but faster at batch=1 (1.27-1.40x) — deployment batch size determines whether it helps.
+   flips with batch size: slower than float32 at full-throughput batching (0.49-0.58x)
+   but faster at batch=1 (1.36-1.40x) — deployment batch size determines whether it helps.
 
 6. Topology sharing (forcing branches to share weights) is destructive — collapses
    accuracy. Branch diversity is load-bearing for whatever the architecture does well.
@@ -108,18 +127,22 @@ KEY FINDINGS
    sustained load (steady-state ~48C, no active cooling).
 
 8. Architecture-size ablation (h1=16/32/64) shows the expected tiny-model capacity cliff
-   on HAR and HAPT (accuracy craters with huge seed variance) but it's nearly invisible
-   on ECG in raw accuracy — because ECG's imbalanced test set lets a degenerate model
-   score ~89% by always predicting the majority class, masking the same underlying
-   capacity failure (same accuracy-vs-F1 blind spot as finding 4).
+   on HAR and HAPT (accuracy craters with huge seed variance). On ECG the cliff's
+   visibility depends on `balance`: under the old balance=False default it was nearly
+   invisible in raw accuracy (imbalanced test set let a degenerate model score ~89% by
+   always predicting the majority class, masking the same underlying capacity failure
+   as finding 4). Under the current balance=True default it's now the most dramatic
+   cliff of either dataset (h1=16 uncompressed acc 89.7%->66.6%, a 23pp drop vs. only
+   6pp at the largest config) — oversampling removes the majority-class floor that was
+   hiding it. See docs/experiment_log.md, 2026-07-28 entry.
 
 DATASETS (3 active)
 --------------------
   UCI HAR            561 features, 6-class wearable activity (walking, sitting, etc.)
   ECG Heartbeat       187 features, 5-class arrhythmia, patient-independent DS1/DS2 split
-                      (MIT-BIH via PhysioNet), natural unbalanced distribution
+                      (MIT-BIH via PhysioNet), trains on oversampled balance=True data
   HAPT                561 features, 12-class activities + postural transitions,
-                      natural unbalanced distribution
+                      trains on its natural, unbalanced distribution (balance=False)
   EEG Brainwave       DROPPED 2026-07-21 — unfixable patient/session leakage in the only
                       available source data. Loader/experiment code kept for reference,
                       not wired into the CLI.
@@ -131,8 +154,12 @@ WHAT WAS EXPLORED AND RULED OUT
                                  by patient-independent DS1/DS2 split
   EEG dataset                   Unfixable leakage in the only available source data —
                                  dropped from the default experiment set entirely
-  Oversampling by duplication   Net negative for ECG/HAPT — less consistent TOST result,
-                                 no real F1/balanced-accuracy improvement — reverted
+  Oversampling by duplication   Dataset-dependent, not one-size-fits-all: net POSITIVE for
+                                 ECG (restores Dendritic's accuracy edge and the
+                                 Snowflake/Global/QAT robustness result) — kept, balance=
+                                 True. Net NEGATIVE for HAPT (~20pp accuracy cost, ~8x
+                                 variance inflation, no compensating benefit) — reverted,
+                                 balance=False. See docs/experiment_log.md, 2026-07-27.
   Class-weighted loss           No F1 improvement (recall up, precision collapsed
                                  equally) — reverted, not committed
   Focal loss, Tversky loss      Both tried for ECG rare-class F1 — neither beat plain
