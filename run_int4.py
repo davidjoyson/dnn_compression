@@ -1,10 +1,9 @@
-"""Quick int4-only run across all 4 datasets."""
+"""Quick int4-only run across the current active datasets (ECG, HAPT)."""
 import time
 import torch
 from sklearn.model_selection import train_test_split
 
-from src.loaders.load_har import load_har
-from src.loaders.load_eeg import load_eeg
+from src.loaders.load_ecg_patient_split import load_ecg_patient_split
 from src.loaders.load_hapt import load_hapt
 from src.models.dendritic_network import DendriticNetwork
 from src.training.train import train
@@ -19,9 +18,11 @@ SEEDS = (42, 0, 7)
 EPOCHS = 50
 FINE_TUNE = 3
 
+# Matches each dataset's canonical training config (docs/experiment_log.md, 2026-07-27):
+# ECG is balance=True, HAPT is balance=False.
 DATASETS = [
-    ("EEG",  load_eeg,  3),
-    ("HAPT", load_hapt, 12),
+    ("ECG",  lambda: load_ecg_patient_split(balance=True),  5),
+    ("HAPT", lambda: load_hapt(balance=False),              12),
 ]
 
 

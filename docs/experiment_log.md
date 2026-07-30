@@ -1681,3 +1681,29 @@ Re-ran the full ablation suite (`main.py --exp ablation component regularization
 3. **Component ablation reconfirms branch diversity (not redundancy) is load-bearing**, now under the current balance config: quantization alone changes accuracy by <0.03pp on either dataset; forcing the 8 branches to share weights collapses accuracy to 0.382 (ECG) / 0.236 (HAPT), and quantizing on top of that collapse changes nothing further. Matches the previously-documented (lower-seed-count, pre-balance-change) finding.
 
 4. **New, unexplained result: ECG's `reg_only` collapses disproportionately under `balance=True`.** Weight decay alone (float32, no quantization) drops ECG accuracy to 77.6% — a 13.7pp fall from baseline, vs. `quant_only`'s ~0.03pp change in the *same* run, and vs. `reg_only`'s own ~0pp cost under the old unbalanced config (91.24%, effectively free). Weight decay and oversampling appear to interact destructively on ECG specifically — not just "the general balance-induced accuracy hit," since `none` and `quant_only` in the same run only lost ~2.8pp. HAPT is unaffected (`reg_only` costs 0.37pp, as before). Mechanism not yet identified — candidates: a fixed `weight_decay=1e-3` may be miscalibrated for the oversampled effective dataset size, or the patient-split's smaller unique-sample count compounds with regularization differently than duplicated majority-class examples. Flagged as open, not resolved — next step would be a weight_decay sweep before treating this as a settled finding.
+
+---
+
+## 2026-07-30 — int4 Rerun Under Current Pipeline Config (ECG patient-split + `balance`, HAR/EEG dropped)
+
+### Summary
+
+`run_int4.py` was last run 2026-07-12, before the ECG patient-split fix, the `balance=True`(ECG)/`balance=False`(HAPT) config, and the HAR/EEG removal from the active pipeline (EEG dropped for unfixable leakage 2026-07-21, HAR made non-default 2026-07-24). The script still imported `load_har`/`load_eeg` and called the ECG/HAPT loaders with no `balance` argument. Fixed to match `main.py`'s canonical loader calls (`load_ecg_patient_split(balance=True)`, `load_hapt(balance=False)`), dropped HAR/EEG. Reran 3 seeds (42, 0, 7), 50 epochs, 3 fine-tune epochs — same protocol as the original run, output logged to `outputs/int4/int4_run_20260730_093457.log`.
+
+**Time: 49m0s** (ECG 46.3 min, HAPT 2.3 min).
+
+### Results
+
+| Dataset | Uncompressed | Snowflake int8 | Snowflake int4 | int4 TOST (ε=2%) | Size |
+|---|---|---|---|---|---|
+| ECG | 0.8450 ± 0.0310 | 0.8707 ± 0.0143 (+2.57pp) | 0.7348 ± 0.1904 (−11.02pp) | **NOT EQUIV** | 68660B → 8630B (8.0×) |
+| HAPT | 0.9287 ± 0.0046 | 0.9269 ± 0.0068 (−0.18pp) | 0.9104 ± 0.0324 (−1.83pp) | **NOT EQUIV** | 165328B → 20714B (8.0×) |
+
+Per-seed ECG int4: seed=42 0.7948, seed=0 0.6485, seed=7 0.7611. Per-seed HAPT int4: seed=42 0.9121, seed=0 0.9225, seed=7 0.8966.
+
+### Key findings
+
+1. **Int4 fails TOST on both currently-active datasets** — not just ECG as the 2026-07-12 run suggested. HAPT flipped from a smaller, previously-reported gap to still failing at −1.83pp under the current `balance=False` config.
+2. **ECG's int4 failure got worse and much noisier under `balance=True`**: −11.02pp mean drop (vs. −8.74pp on the old pre-patient-split/pre-balance run), with per-seed variance nearly tripling (±0.19 vs. ±0.06) — one seed (seed=0) collapsed to 64.85%. Oversampled, patient-split ECG data appears even less tolerant of 4-bit precision than the old leaky-split version.
+3. **Int8 remains reliable on both** — ECG even improves under compression (+2.57pp, consistent with the main experiment's "compression over-improves" pattern on this dataset), HAPT stays flat (−0.18pp).
+4. **Absolute accuracies in this run are not comparable to the 2026-07-12 numbers** (that run used the pre-patient-split ECG loader and no oversampling) — only the int4-vs-int8 reliability pattern should be compared across the two runs, not the raw percentages.
