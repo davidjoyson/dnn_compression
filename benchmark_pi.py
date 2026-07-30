@@ -18,6 +18,8 @@ Usage:
   python benchmark_pi.py --dataset har --skip-qat
 """
 import argparse
+import ctypes
+import gc
 import os
 import time
 
@@ -68,6 +70,14 @@ def make_model(input_dim, num_classes):
 
 
 def mem_rss_mb():
+    # Force glibc to release freed arena pages back to the OS first, so this
+    # reads live usage instead of a high-water mark left over from an earlier
+    # method's transient allocations (e.g. FX calibration forward passes).
+    gc.collect()
+    try:
+        ctypes.CDLL(None).malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
     try:
         with open("/proc/self/status") as f:
             for line in f:
