@@ -1,5 +1,6 @@
 from src.loaders.load_hapt import load_hapt
 from src.experiments.base_experiment import run_experiment
+from src.models.compact_baselines import CompactHARMLP
 
 _CLASS_NAMES = [
     "Walking", "Walking Upstairs", "Walking Downstairs",
@@ -27,4 +28,6 @@ def run_hapt(epochs=50, seeds=(42,), fine_tune_epochs=3, model_dir=None):
         fine_tune_epochs=fine_tune_epochs,
         batch_size=128,
         model_dir=model_dir,
+        lit_baseline_fn=lambda: CompactHARMLP(input_dim=data[0].shape[1], num_classes=12),
+        lit_baseline_label="HAPT-MLP",
     )

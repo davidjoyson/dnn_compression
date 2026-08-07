@@ -1,5 +1,6 @@
 from src.loaders.load_ecg_patient_split import load_ecg_patient_split
 from src.experiments.base_experiment import run_experiment
+from src.models.compact_baselines import ECGCNNBaseline
 
 _CLASS_NAMES = ["Normal", "Supraventricular", "Ventricular", "Fusion", "Unknown"]
 
@@ -24,4 +25,6 @@ def run_ecg_patient(epochs=50, seeds=(42,), fine_tune_epochs=3, model_dir=None):
         fine_tune_epochs=fine_tune_epochs,
         batch_size=256,
         model_dir=model_dir,
+        lit_baseline_fn=lambda: ECGCNNBaseline(num_classes=5),
+        lit_baseline_label="ECG-CNN",
     )

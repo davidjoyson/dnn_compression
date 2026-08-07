@@ -332,8 +332,10 @@ def print_summary(results, timings):
                 ("mixed",            "Mixed    "),
             ]
             print(f"  Baseline Comparison (all methods, n={n_seeds}):")
+            lit_label = mc.get("literature", {}).get("label", "Literature Baseline") if mc.get("literature") else "Literature Baseline"
             for model_key, model_label in [("mlp", "MLP (total-param-matched)"),
-                                           ("layer_matched", "LayerMatchedMLP (per-layer-matched)")]:
+                                           ("layer_matched", "LayerMatchedMLP (per-layer-matched)"),
+                                           ("literature", f"{lit_label} (literature baseline)")]:
                 mdl = mc.get(model_key)
                 if not mdl:
                     continue

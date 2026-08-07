@@ -266,7 +266,13 @@ def compress_model_snowflake_static(model, calibration_data, backend="fbgemm"):
     return convert_fx(prepared)
 
 
-def compress_model_mixed(model, calibration_data, backend="fbgemm"):
+def compress_model_mixed(model, calibration_data, backend="fbgemm", mixed_layers=("fc1", "out")):
+    """mixed_layers: names of the two modules to leave float32 (first, last).
+    Defaults match DendriticNetwork/MLPBaseline/LayerMatchedMLP's naming;
+    architectures with different layer names (e.g. ECGCNNBaseline's "conv1"
+    instead of "fc1") must pass their own -- set_module_name() silently no-ops
+    on a name that doesn't exist in the model, so a wrong default wouldn't
+    error, just quietly quantize every layer instead of skipping the first."""
     from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
     import torch.ao.quantization as tq
 
@@ -274,8 +280,8 @@ def compress_model_mixed(model, calibration_data, backend="fbgemm"):
     qconfig_mapping = (
         tq.QConfigMapping()
         .set_global(tq.get_default_qconfig(backend))
-        .set_module_name("fc1", None)
-        .set_module_name("out", None)
+        .set_module_name(mixed_layers[0], None)
+        .set_module_name(mixed_layers[1], None)
     )
     X_cal = calibration_data[0].cpu()
     prepared = prepare_fx(model_copy, qconfig_mapping, (X_cal[:1],))
@@ -285,7 +291,8 @@ def compress_model_mixed(model, calibration_data, backend="fbgemm"):
 
 
 def mixed_model_size_bytes(model):
-    """Quantized layers: int8; unquantized layers (fc1, out): float32."""
+    """Quantized layers: int8; unquantized layers (the two named in
+    mixed_layers -- Linear or Conv1d, whichever the architecture uses): float32."""
     total = 0
     for _, mod in model.named_modules():
         if hasattr(mod, "weight") and callable(mod.weight):
@@ -295,7 +302,7 @@ def mixed_model_size_bytes(model):
                     total += mod.bias().nelement() * 4
             except (AttributeError, RuntimeError):
                 pass
-        elif isinstance(mod, torch.nn.Linear):
+        elif isinstance(mod, (torch.nn.Linear, torch.nn.Conv1d)):
             total += mod.weight.nelement() * 4
             if mod.bias is not None:
                 total += mod.bias.nelement() * 4
@@ -359,18 +366,25 @@ def int4_size_bytes(compressed):
 
 
 def dynamic_model_size_bytes(model):
-    """True compressed size: int8 weight bytes + float32 bias bytes per Linear layer.
+    """True compressed size: int8 weight bytes + float32 bias bytes per
+    dynamically-quantized Linear layer, plus float32 bytes for any layer type
+    quantize_dynamic doesn't touch (e.g. Conv1d -- it only targets Linear, so
+    those stay float32 and must be counted as such, not skipped).
 
     torch.save inflates size ~2x due to pickle overhead on PackedParams objects;
     this measures the raw data actually stored.
     """
     total = 0
     for _, mod in model.named_modules():
-        if hasattr(mod, "weight") and hasattr(mod, "bias"):
-            try:
+        if hasattr(mod, "weight") and hasattr(mod, "bias") and mod.weight is not None:
+            if callable(mod.weight):
+                # dynamically-quantized Linear: weight()/bias() are methods
                 total += mod.weight().int_repr().numel()      # 1 byte per int8 weight
                 if mod.bias() is not None:
                     total += mod.bias().numel() * 4           # 4 bytes per float32 bias
-            except (AttributeError, RuntimeError):
-                pass
+            elif isinstance(mod.weight, torch.nn.Parameter):
+                # untouched by quantize_dynamic (e.g. Conv1d) -- still float32
+                total += mod.weight.nelement() * 4
+                if mod.bias is not None:
+                    total += mod.bias.nelement() * 4
     return total

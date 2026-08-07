@@ -33,10 +33,15 @@ COMPARISON_METHODS = ["snowflake", "global", "dynamic", "static",
                       "snowflake_static", "perchan", "qat", "mixed"]
 
 
-def compress_all_methods(model, X_train, y_train, X_test, y_test, num_classes, fine_tune_epochs):
+def compress_all_methods(model, X_train, y_train, X_test, y_test, num_classes, fine_tune_epochs,
+                         mixed_layers=("fc1", "out")):
     """
-    Run a plain Linear-layer model (MLPBaseline / LayerMatchedMLP) through all
-    8 compression methods used on DendriticNetwork. Returns
+    Run a model through all 8 compression methods used on DendriticNetwork.
+    Originally written for plain Linear-layer models (MLPBaseline /
+    LayerMatchedMLP), also used for architecture-diverse literature baselines
+    (e.g. ECGCNNBaseline) -- mixed_layers must match the model's actual first/
+    last layer names for "Mixed precision" to mean the same thing across
+    architectures (see compress_model_mixed's docstring). Returns
     {method: (acc, f1, size_bytes)}; failed FX methods return (None, None, None).
     """
     original_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
@@ -109,7 +114,7 @@ def compress_all_methods(model, X_train, y_train, X_test, y_test, num_classes, f
 
     reset()
     try:
-        mq = compress_model_mixed(model, calibration_data=(X_train, y_train))
+        mq = compress_model_mixed(model, calibration_data=(X_train, y_train), mixed_layers=mixed_layers)
         results["mixed"] = (evaluate(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
                             f1_eval(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
                             mixed_model_size_bytes(mq))
@@ -121,12 +126,17 @@ def compress_all_methods(model, X_train, y_train, X_test, y_test, num_classes, f
     return results
 
 
-def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_epochs, batch_size=128, model_dir=None, weight_decay=0.0):
+def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_epochs, batch_size=128, model_dir=None, weight_decay=0.0,
+                   lit_baseline_fn=None, lit_baseline_label="Literature Baseline"):
     """
     Shared experiment loop for all tabular datasets.
 
     get_data: callable(seed) -> (X_raw_tr, y_raw_tr, X_raw_test, y_raw_test) as NumPy arrays.
       - For fixed loaders (HAR/ECG/EEG/HAPT): pass lambda seed: load_dataset()
+    lit_baseline_fn: optional callable() -> nn.Module -- a fresh, dataset-specific
+      literature baseline (e.g. ECGCNNBaseline, CompactHARMLP), not shaped to match
+      Dendritic like MLPBaseline/LayerMatchedMLP are. Run through the same 9-method
+      compression suite if provided; skipped entirely if None.
     """
     acc_u_list, acc_c_list, acc_mlp_list, acc_mlp_c_list = [], [], [], []
     acc_global_list, acc_dynamic_list, acc_static_list = [], [], []
@@ -167,6 +177,14 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     lm_size = {}
     size_lm_u = None
     n_params_lm = None
+
+    # Optional dataset-specific literature baseline (ECGCNNBaseline, CompactHARMLP, ...)
+    lit_acc_u_list, lit_f1_u_list = [], []
+    lit_acc  = {m: [] for m in COMPARISON_METHODS}
+    lit_f1   = {m: [] for m in COMPARISON_METHODS}
+    lit_size = {}
+    size_lit_u = None
+    n_params_lit = None
 
     for seed in seeds:
         X_raw_tr, y_raw_tr, X_raw_test, y_raw_test = get_data(seed)
@@ -446,6 +464,30 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             if lm_size.get(m) is None and size is not None:
                 lm_size[m] = size
 
+        # Optional dataset-specific literature baseline (not shape-matched to
+        # Dendritic -- e.g. a small 1D-CNN for ECG, a compact dense net for HAPT)
+        if lit_baseline_fn is not None:
+            lit = lit_baseline_fn()
+            if n_params_lit is None:
+                n_params_lit = sum(p.numel() for p in lit.parameters())
+            train(lit, X_train, y_train, epochs=epochs, num_classes=num_classes, batch_size=batch_size,
+                  verbose=True, label=f"{lit_baseline_label} seed={seed}")
+            lit_acc_u_list.append(evaluate(lit, X_test, y_test, num_classes=num_classes))
+            lit_f1_u_list.append(f1_eval(lit, X_test, y_test, num_classes=num_classes))
+            if size_lit_u is None:
+                size_lit_u = lit.size_bytes()
+
+            lit_mixed_layers = getattr(type(lit), "MIXED_LAYERS", ("fc1", "out"))
+            lit_results = compress_all_methods(lit, X_train, y_train, X_test, y_test,
+                                               num_classes, fine_tune_epochs,
+                                               mixed_layers=lit_mixed_layers)
+            for m in COMPARISON_METHODS:
+                acc, f1, size = lit_results[m]
+                lit_acc[m].append(acc)
+                lit_f1[m].append(f1)
+                if lit_size.get(m) is None and size is not None:
+                    lit_size[m] = size
+
         if loss_history is None:
             loss_history = {
                 "Dendritic (Uncompressed)": hist_u,
@@ -605,6 +647,22 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
                 "tost":         {m: tost_paired(lm_acc_u_list, lm_acc[m]) for m in COMPARISON_METHODS},
                 "sizes":        lm_size,
             },
+            # Dataset-specific literature baseline (e.g. ECGCNNBaseline,
+            # CompactHARMLP) -- not shape-matched to Dendritic; None if the
+            # caller didn't supply lit_baseline_fn.
+            "literature": {
+                "label":                  lit_baseline_label,
+                "accuracy_uncompressed":  _mean(lit_acc_u_list),
+                "f1_uncompressed":        _mean(lit_f1_u_list),
+                "size_uncompressed":      size_lit_u,
+                "params":                 n_params_lit,
+                "accuracy":     {m: _mean_safe(lit_acc[m]) for m in COMPARISON_METHODS},
+                "accuracy_std": {m: _std_safe(lit_acc[m])  for m in COMPARISON_METHODS},
+                "f1":           {m: _mean_safe(lit_f1[m])  for m in COMPARISON_METHODS},
+                "ci_95":        {m: _ci95_safe(lit_acc[m]) for m in COMPARISON_METHODS},
+                "tost":         {m: tost_paired(lit_acc_u_list, lit_acc[m]) for m in COMPARISON_METHODS},
+                "sizes":        lit_size,
+            } if lit_baseline_fn is not None else None,
         },
         "num_seeds":        n,
         "loss_history":     loss_history,
