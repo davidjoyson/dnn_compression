@@ -665,4 +665,27 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "compressed_qat":     tost_paired(acc_u_list, acc_qat_list),
             "compressed_mixed":   tost_paired(acc_u_list, acc_mixed_list),
         },
+        # Same TOST/CI machinery applied to macro-F1 instead of accuracy -- the
+        # f1_*_list per-seed lists above already exist, so this is free.
+        "ci_95_f1": {
+            "uncompressed":       _ci95(f1_u_list),
+            "compressed":         _ci95(f1_c_list),
+            "compressed_global":  _ci95(f1_global_list),
+            "compressed_dynamic": _ci95(f1_dynamic_list),
+            "compressed_static":  _ci95_safe(f1_static_list),
+            "compressed_snowflake_static": _ci95_safe(f1_snowflakestatic_list),
+            "compressed_perchan": _ci95_safe(f1_perchan_list),
+            "compressed_qat":     _ci95_safe(f1_qat_list),
+            "compressed_mixed":   _ci95_safe(f1_mixed_list),
+        },
+        "tost_f1": {
+            "compressed":         tost_paired(f1_u_list, f1_c_list),
+            "compressed_global":  tost_paired(f1_u_list, f1_global_list),
+            "compressed_dynamic": tost_paired(f1_u_list, f1_dynamic_list),
+            "compressed_static":  tost_paired(f1_u_list, f1_static_list),
+            "compressed_snowflake_static": tost_paired(f1_u_list, f1_snowflakestatic_list),
+            "compressed_perchan": tost_paired(f1_u_list, f1_perchan_list),
+            "compressed_qat":     tost_paired(f1_u_list, f1_qat_list),
+            "compressed_mixed":   tost_paired(f1_u_list, f1_mixed_list),
+        },
     }

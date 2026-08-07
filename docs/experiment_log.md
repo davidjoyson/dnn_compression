@@ -1707,3 +1707,55 @@ Per-seed ECG int4: seed=42 0.7948, seed=0 0.6485, seed=7 0.7611. Per-seed HAPT i
 2. **ECG's int4 failure got worse and much noisier under `balance=True`**: −11.02pp mean drop (vs. −8.74pp on the old pre-patient-split/pre-balance run), with per-seed variance nearly tripling (±0.19 vs. ±0.06) — one seed (seed=0) collapsed to 64.85%. Oversampled, patient-split ECG data appears even less tolerant of 4-bit precision than the old leaky-split version.
 3. **Int8 remains reliable on both** — ECG even improves under compression (+2.57pp, consistent with the main experiment's "compression over-improves" pattern on this dataset), HAPT stays flat (−0.18pp).
 4. **Absolute accuracies in this run are not comparable to the 2026-07-12 numbers** (that run used the pre-patient-split ECG loader and no oversampling) — only the int4-vs-int8 reliability pattern should be compared across the two runs, not the raw percentages.
+
+---
+
+## 2026-07-30 (cont.) — Branch-Wise Snowflake Evidence (`analyze_snowflake_branches.py`, new)
+
+### Summary
+
+Reviewer ask: back the Snowflake idea with direct per-branch measurements (weight range/std, cosine similarity between branches, quantization error, clipping rate) rather than only whole-model accuracy deltas. Pure analysis on the existing `dendritic_uncompressed.pt`/`dendritic_snowflake.pt` checkpoints (int4 recomputed on the fly, deterministic, no fine-tuning) — no new training. Script writes `outputs/snowflake_branch_evidence/{branch_stats,summary}.csv`.
+
+### Key findings
+
+1. **Branches are geometrically diverse, not redundant** — mean pairwise cosine similarity between the 8 branches' flattened weight vectors is ~0 (ECG: 0.008, range −0.111 to 0.123; HAPT: 0.070, range −0.123 to 0.292). This is the first direct geometric measurement behind the previously-reported component-ablation finding that forcing branches to share weights collapses accuracy — the branches really do point in different directions, not just "ablation broke something."
+2. **Clipping rate is a non-finding by construction**: ~0.2–0.6% for every branch/bitwidth, because each layer's scale is set to exactly `max(abs(weight))/qmax`, so by definition one element always lands exactly at the boundary and nothing is truncated beyond it. Reported for completeness, but the real error source under this per-layer symmetric scheme is rounding/quantization noise (RMSE), not clipping.
+3. **Int4 quantization RMSE is ~6–8× int8's on both datasets** (ECG: 0.0091→0.0608, HAPT: 0.0023→0.0195), consistent with the ~8.5× halving of representable levels (255→15). This lines up with the accuracy story: ECG's int4 RMSE is ~3× HAPT's in absolute terms, and ECG is exactly the dataset whose int4 accuracy catastrophically collapses (−11.02pp, high variance) while HAPT only degrades mildly (−1.83pp) — see the run above. Int8 RMSE stays an order of magnitude lower on both and both show ≥ −0.2pp accuracy impact.
+4. Only 2 datasets exist, so this is a directional/illustrative pairing, not a statistical correlation claim.
+
+---
+
+## 2026-07-30 (cont.) — TOST on Macro-F1; Why ±2%; Balanced-Accuracy Scoping
+
+### Summary
+
+Reviewer ask: report CIs, justify the ±2% TOST margin, and extend equivalence testing to macro-F1 and balanced accuracy (not just accuracy).
+
+**Why ±2%.** `tost_paired(..., margin=0.02)` (`src/analysis/tost.py`) has been used with a fixed ±2 percentage-point margin since it was introduced, but the choice was never written down anywhere. It's a conventional default borrowed from equivalence-testing practice generally (analogous to how bioequivalence testing picks a fixed practical-indifference threshold), **not something derived from a domain requirement for this task** (there's no formal minimum-important-difference study behind it) — that should be stated plainly rather than implied as more rigorous than it is. It's also not scaled per dataset: HAPT's own uncompressed seed-to-seed std is ±0.74% (2026-07-27 run), so a ±2% margin is generous relative to its natural noise; ECG's uncompressed std is ±2.21% — *larger* than the margin itself, meaning ECG's TOST failures (Snowflake/Global/QAT "not equivalent," all over-shooting positively) are partly a symptom of the margin being tight relative to ECG's inherent seed variance, not only a real effect size. A more rigorous version would scale the margin to each dataset's observed noise floor (e.g. margin = k × pooled std) rather than use one fixed global number — not done here, flagged as a real limitation.
+
+**TOST on macro-F1** (new `analyze_tost_f1.py`, reused `outputs/run_20260727_204917_ecg_balanced_hapt_unbalanced/per_seed_metrics.csv` — no retraining) and **wired into the pipeline itself** (`base_experiment.py`'s returned dict now has `ci_95_f1`/`tost_f1` alongside the existing accuracy `ci_95`/`tost`, using the f1 per-seed lists that were already being collected; `summary.py` prints both blocks). Result: **16/16 method–dataset pairs are TOST-equivalent on macro-F1 on both ECG and HAPT** — including Snowflake/Global/QAT on ECG, which fail accuracy's TOST. This means the "compression over-improves accuracy past the margin" finding is specific to raw accuracy and does **not** hold under macro-F1 — the F1 deltas are all sub-percentage-point (largest: Snowflake +0.87pp on ECG) even where the accuracy delta is +2.5pp, consistent with macro-F1's averaging diluting a shift concentrated in the majority class. Worth stating in any writeup that leans on the accuracy over-improvement finding: it doesn't survive under the class-balance-sensitive metric.
+
+**95% CI, surfaced explicitly** (previously only shown inside TOST's diff-CI, not for the raw metric values themselves):
+
+| Dataset | Metric | Uncompressed (mean, 95% CI) | Snowflake (mean, 95% CI) |
+|---|---|---|---|
+| ECG | Accuracy | 0.8371 [0.8212, 0.8529] | 0.8621 [0.8547, 0.8695] |
+| ECG | Macro-F1 | 0.3595 [0.3516, 0.3673] | 0.3681 [0.3601, 0.3761] |
+| HAPT | Accuracy | 0.9251 [0.9198, 0.9304] | 0.9277 [0.9237, 0.9318] |
+| HAPT | Macro-F1 | 0.8191 [0.8081, 0.8300] | 0.8267 [0.8173, 0.8361] |
+
+(`ci_95` in `tost.py` is a t-distribution 95% CI half-width, `n=10` seeds; note the `±X%` figures elsewhere in this log/README are seed-to-seed **std**, not CI — different quantities, easy to conflate.)
+
+**Balanced accuracy — scoped, not done.** Unlike F1, balanced accuracy is **not currently tracked per-seed anywhere** in the pipeline — `per_class_stats_from_cm` (`evaluate.py`) computes it, but only against a single best-seed snapshot inside `summary.py`'s printout, not inside the seed loop in `base_experiment.py`. Extending TOST to it needs real plumbing (a new `balanced_accuracy_eval` helper, ~9 new per-seed lists across all compression methods, threading into the returned dict and `per_seed_metrics.csv`, mirroring exactly what F1 already had) **and a fresh 10-seed run to populate it** (existing runs have no per-seed confusion matrices saved to recompute it retroactively). Not attempted this session — didn't want to silently kick off a multi-hour rerun (ECG alone was ~3h in the 2026-07-27 run) without confirming. Ready to implement on request.
+
+---
+
+## 2026-07-30 (cont.) — Hardware Benchmarking Protocol Documented
+
+### Summary
+
+Reviewer ask: report the full Pi benchmarking protocol (warm-up, repetitions, CPU settings, peak RAM, temperature, energy). Everything was already true in the code but scattered/implicit; added a single **Benchmarking Protocol** reference table to the README's Edge Deployment section rather than duplicating it here. Pure documentation — no new measurements.
+
+Two real gaps surfaced while writing it up (not fixed, just now explicit instead of silently missing):
+1. **No CPU thread-pinning or governor lock.** `benchmark_pi.py`/`thermal_test.py` never call `taskset`, set CPU affinity, or force a `performance` governor — PyTorch uses its default 4-core intra-op thread pool with whatever governor the Pi's OS defaults to. Frequency-scaling-induced run-to-run variance is therefore possible and not controlled for.
+2. **"Peak RAM" is actually a point-in-time reading**, not a continuously-sampled peak — `mem_rss_mb()` reads VmRSS once, after each method's timed loop finishes (see the malloc_trim investigation above for how confounded even that single reading can be across methods in one process).

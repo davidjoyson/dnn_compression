@@ -283,24 +283,37 @@ def print_summary(results, timings):
         if r.get("size_mlp_uncompressed") is not None:
             print(f"  MLP Size         : {r['size_mlp_uncompressed']} -> {r['size_mlp_compressed']} bytes")
 
+        _TOST_LABELS = [
+            ("compressed",         "Snowflake"),
+            ("compressed_global",  "Global   "),
+            ("compressed_dynamic", "Dynamic  "),
+            ("compressed_static",  "Static   "),
+            ("compressed_snowflake_static", "SF+Static"),
+            ("compressed_perchan", "Per-chan "),
+            ("compressed_qat",     "QAT      "),
+            ("compressed_mixed",   "Mixed    "),
+            ("compressed_int4",    "Int4     "),
+        ]
+
         tost_r = r.get("tost", {})
         if tost_r:
-            _TOST_LABELS = [
-                ("compressed",         "Snowflake"),
-                ("compressed_global",  "Global   "),
-                ("compressed_dynamic", "Dynamic  "),
-                ("compressed_static",  "Static   "),
-                ("compressed_snowflake_static", "SF+Static"),
-                ("compressed_perchan", "Per-chan "),
-                ("compressed_qat",     "QAT      "),
-                ("compressed_mixed",   "Mixed    "),
-                ("compressed_int4",    "Int4     "),
-            ]
             rows = [(lbl, tost_r[k]) for k, lbl in _TOST_LABELS
                     if k in tost_r and tost_r[k].get("equivalent") is not None]
             if rows:
-                print(f"  Equivalence (TOST, e=2%, n={n_seeds}):")
+                print(f"  Equivalence (TOST, e=2%, n={n_seeds}, accuracy):")
                 for lbl, t in rows:
+                    verdict = "EQUIV    " if t["equivalent"] else "NOT EQUIV"
+                    print(f"    {lbl}: {verdict}  diff={t['mean_diff']:+.4f}"
+                          f"  CI=[{t['ci_low']:+.4f}, {t['ci_high']:+.4f}]"
+                          f"  (p_low={t['p_low']:.4f}, p_high={t['p_high']:.4f})")
+
+        tost_f1_r = r.get("tost_f1", {})
+        if tost_f1_r:
+            rows_f1 = [(lbl, tost_f1_r[k]) for k, lbl in _TOST_LABELS
+                       if k in tost_f1_r and tost_f1_r[k].get("equivalent") is not None]
+            if rows_f1:
+                print(f"  Equivalence (TOST, e=2%, n={n_seeds}, macro-F1):")
+                for lbl, t in rows_f1:
                     verdict = "EQUIV    " if t["equivalent"] else "NOT EQUIV"
                     print(f"    {lbl}: {verdict}  diff={t['mean_diff']:+.4f}"
                           f"  CI=[{t['ci_low']:+.4f}, {t['ci_high']:+.4f}]"
