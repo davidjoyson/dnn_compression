@@ -16,6 +16,7 @@ METHOD_STUBS = [
     ("Per-channel (int8)",       "_compressed_perchan"),
     ("QAT (int8)",               "_compressed_qat"),
     ("Mixed precision",          "_compressed_mixed"),
+    ("Snowflake (int6)",         "_compressed_int6"),
     ("Snowflake (int4)",         "_compressed_int4"),
     ("MLP Baseline",             "_mlp_baseline"),
 ]

@@ -310,25 +310,32 @@ def mixed_model_size_bytes(model):
 
 
 # ------------------------------------------------------------------ #
-# Int4 quantization (per-layer, 4-bit range [-7, 7])                 #
-# Same topology as Snowflake; stored as int8, packed size 0.5 B/elem #
+# Low-bit quantization (per-layer signed symmetric ranges)            #
+# Stored in int8 tensors for evaluation; sizes model bit-packed data. #
 # ------------------------------------------------------------------ #
 
-def _quantize_int4(model):
+def _quantize_low_bit(model, bits):
+    if not 2 <= bits <= 8:
+        raise ValueError(f"bits must be between 2 and 8, got {bits}")
+    qmax = (1 << (bits - 1)) - 1
     groups = defaultdict(list)
     for name, p in model.named_parameters():
         groups[_layer_name(name)].append(p.data)
     scales = {}
     for layer, tensors in groups.items():
         max_val = max(t.abs().max().item() for t in tensors)
-        scales[layer] = torch.tensor(max_val / 7.0 if max_val > 0 else 1.0, dtype=torch.float32)
+        scales[layer] = torch.tensor(max_val / qmax if max_val > 0 else 1.0, dtype=torch.float32)
     compressed = {}
     with torch.no_grad():
         for name, p in model.named_parameters():
             scale = scales[_layer_name(name)]
-            q = torch.round(p.data / scale).clamp(-7, 7).to(torch.int8)
+            q = torch.round(p.data / scale).clamp(-qmax, qmax).to(torch.int8)
             compressed[name] = {"q": q.cpu(), "scale": scale.cpu()}
     return compressed
+
+
+def _quantize_int4(model):
+    return _quantize_low_bit(model, bits=4)
 
 
 def compress_model_int4(model, fine_tune_data=None, fine_tune_epochs=3, fine_tune_lr=1e-4):
@@ -363,6 +370,37 @@ def int4_size_bytes(compressed):
             total += 4
             seen_layers.add(layer)
     return int(total)
+
+
+def compress_model_int6(model, fine_tune_data=None, fine_tune_epochs=3, fine_tune_lr=1e-4):
+    """Per-layer signed INT6 weight quantization; computation remains float32."""
+    compressed = _quantize_low_bit(model, bits=6)
+    if fine_tune_data is not None:
+        X, y = fine_tune_data
+        num_classes = getattr(model, "num_classes", 1)
+        decompress_model_int6(compressed, model)
+        train(model, X, y, epochs=fine_tune_epochs, lr=fine_tune_lr,
+              num_classes=num_classes, verbose=True, label="int6 fine-tune")
+        compressed = _quantize_low_bit(model, bits=6)
+    return compressed
+
+
+def decompress_model_int6(compressed, model):
+    """Dequantize INT6 weights into the model's float tensors for evaluation."""
+    return decompress_model_int4(compressed, model)
+
+
+def int6_size_bytes(compressed):
+    """Packed INT6 storage estimate: 0.75 bytes/element + one scale/layer."""
+    total_bits = 0
+    seen_layers = set()
+    for name, entry in compressed.items():
+        total_bits += entry["q"].nelement() * 6
+        layer = _layer_name(name)
+        if layer not in seen_layers:
+            total_bits += 32
+            seen_layers.add(layer)
+    return (total_bits + 7) // 8
 
 
 def dynamic_model_size_bytes(model):

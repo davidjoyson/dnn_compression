@@ -22,6 +22,7 @@ METHOD_COLORS = {
     "Per-channel (int8)":  "#BCBD22",
     "QAT (int8)":           "#E377C2",
     "Mixed precision":      "#393B79",
+    "Snowflake (int6)":     "#8C6D31",
     "Snowflake (int4)":     "#637939",
 }
 

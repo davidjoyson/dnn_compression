@@ -36,7 +36,7 @@ COMPARISON_METHODS = ["snowflake", "global", "dynamic", "static",
 def compress_all_methods(model, X_train, y_train, X_test, y_test, num_classes, fine_tune_epochs,
                          mixed_layers=("fc1", "out")):
     """
-    Run a model through all 8 compression methods used on DendriticNetwork.
+    Run a model through all compression methods used on DendriticNetwork.
     Originally written for plain Linear-layer models (MLPBaseline /
     LayerMatchedMLP), also used for architecture-diverse literature baselines
     (e.g. ECGCNNBaseline) -- mixed_layers must match the model's actual first/
@@ -168,7 +168,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     output_precision = None
     model_float = None
 
-    # MLP + LayerMatchedMLP across all 8 compression methods (professor point 2/9:
+    # MLP + LayerMatchedMLP across all compression methods (professor point 2/9:
     # baselines must be tested with the same quantization methods as Dendritic)
     mlp_acc  = {m: [] for m in COMPARISON_METHODS}
     mlp_f1   = {m: [] for m in COMPARISON_METHODS}
@@ -631,7 +631,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "mlp_uncompressed":   size_mlp_u,
             "mlp_compressed":     size_mlp_c,
         },
-        # Baselines run through all 8 compression methods (professor points 2/9):
+        # Baselines run through all compression methods (professor points 2/9):
         # MLPBaseline = total-param-matched control; LayerMatchedMLP = same
         # per-stage widths as DendriticNetwork's trunk, no branching.
         "method_comparison": {

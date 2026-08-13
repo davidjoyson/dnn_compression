@@ -171,6 +171,8 @@ def print_summary(results, timings):
         std_mixed    = to_float(r.get("std_compressed_mixed",        0.0))
         acc_int4     = to_float(r.get("accuracy_compressed_int4",   float("nan")))
         std_int4     = to_float(r.get("std_compressed_int4",        0.0))
+        acc_int6     = to_float(r.get("accuracy_compressed_int6",   float("nan")))
+        std_int6     = to_float(r.get("std_compressed_int6",        0.0))
         f1_u      = to_float(r.get("f1_uncompressed",       float("nan")))
         f1_c      = to_float(r.get("f1_compressed",         float("nan")))
         f1_global = to_float(r.get("f1_compressed_global",  float("nan")))
@@ -219,6 +221,9 @@ def print_summary(results, timings):
         if not math.isnan(acc_int4):
             ci_i4 = to_float(_ci.get("compressed_int4", 0.0))
             print(f"  Snowflake (int4) : {acc_int4:.4f} +/- {std_int4:.4f}{_ci_str(ci_i4)}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_int4','?')} bytes]")
+        if not math.isnan(acc_int6):
+            ci_i6 = to_float(_ci.get("compressed_int6", 0.0))
+            print(f"  Snowflake (int6) : {acc_int6:.4f} +/- {std_int6:.4f}{_ci_str(ci_i6)}  [{r.get('size_uncompressed','?')} -> {r.get('size_compressed_int6','?')} bytes; storage-only]")
         if not math.isnan(acc_global) and not math.isnan(acc_dynamic):
             print(f"  -- Compression delta: Snowflake(8b)={acc_c - acc_u:+.4f} | Global(8b)={acc_global - acc_u:+.4f} | Dynamic(8b)={acc_dynamic - acc_u:+.4f}")
         if not math.isnan(acc_mlp):
@@ -299,6 +304,7 @@ def print_summary(results, timings):
             ("compressed_qat",     "QAT      "),
             ("compressed_mixed",   "Mixed    "),
             ("compressed_int4",    "Int4     "),
+            ("compressed_int6",    "Int6     "),
         ]
 
         tost_r = r.get("tost", {})
@@ -336,6 +342,7 @@ def print_summary(results, timings):
                 ("perchan",          "Per-chan "),
                 ("qat",              "QAT      "),
                 ("mixed",            "Mixed    "),
+                ("int6",             "Int6     "),
             ]
             print(f"  Baseline Comparison (all methods, n={n_seeds}):")
             lit_label = mc.get("literature", {}).get("label", "Literature Baseline") if mc.get("literature") else "Literature Baseline"
@@ -369,6 +376,7 @@ def print_summary(results, timings):
                 ("perchan",          "Per-chan "),
                 ("qat",              "QAT      "),
                 ("mixed",            "Mixed    "),
+                ("int6",             "Int6     "),
             ]
             for key, lbl in _OP_LABELS:
                 d = op.get(key)
@@ -444,6 +452,7 @@ def save_per_seed_csv(results, run_dir):
                 "acc_compressed_qat":      _ps("acc_compressed_qat", i),
                 "acc_compressed_mixed":    _ps("acc_compressed_mixed", i),
                 "acc_compressed_int4":     _ps("acc_compressed_int4", i),
+                "acc_compressed_int6":     _ps("acc_compressed_int6", i),
                 "f1_uncompressed":         _ps("f1_uncompressed", i),
                 "f1_compressed":           _ps("f1_compressed", i),
                 "f1_compressed_global":    _ps("f1_compressed_global", i),
@@ -454,6 +463,7 @@ def save_per_seed_csv(results, run_dir):
                 "f1_compressed_qat":       _ps("f1_compressed_qat", i),
                 "f1_compressed_mixed":     _ps("f1_compressed_mixed", i),
                 "f1_compressed_int4":      _ps("f1_compressed_int4", i),
+                "f1_compressed_int6":      _ps("f1_compressed_int6", i),
             })
     if not rows:
         return

@@ -50,13 +50,21 @@ Eight methods evaluated head-to-head. **"Size ratio" and "real hardware speedup"
 | Global int8 | Single global scale across all parameters | 4× | Storage-only | ~1.0× |
 | Per-channel (int8) | One scale per output neuron row; biases stay float32 | ~4× | Storage-only | ~1.0× |
 | Snowflake (int4) | Per-layer int4, ~8× compression | ~8× | Storage-only | ~1.0× |
+| Snowflake (int6) | Per-layer signed int6, bit-packed size estimate | ~5.3× | **Storage-only** — dequantized to float32 for evaluation | No native INT6 speedup claimed |
 | Dynamic int8 | PyTorch `quantize_dynamic` on Linear layers | ~4× | **True INT8** — activations quantized per-call at runtime | 0.49–0.58× at batch=-1 (overhead dominates), **1.36–1.40× at batch=1** |
 | Static (int8) | Per-tensor static calibration via `prepare_fx`/`convert_fx` | ~4× | **True INT8** — weights + activations both int8, real INT8 GEMM | **~1.9×** |
 | Snowflake+Static | Snowflake weight scales + FX-calibrated int8 activations | ~4× | **True INT8** | **~1.9×** |
 | QAT (int8) | Quantization-aware training via `prepare_qat_fx`/`convert_fx` | ~4× | **True INT8** | **~1.9×** (best accuracy of the true-INT8 group) |
 | Mixed precision | Inner layers int8, first and last layers float32 | ~0.9× | **True INT8** on the quantized inner layers only | ~1.2–1.4× (partial — two layers still float32) |
 
-The first 4 rows quantize *weights only*: the stored int8/int4 values get cast back to float32 before any matmul runs, so the ~4–8× storage win never reaches the compute path — real hardware speedup is noise-level (~1.0×). The last 5 rows quantize activations too (via calibration or runtime observation), which is what actually lets `qnnpack`/`fbgemm` dispatch true INT8 GEMM kernels — that's where the real ~1.9× latency win comes from. Accuracy-only tables (below) can't distinguish these two groups; only on-device latency measurement can, which is why `benchmark_pi.py` exists as a separate step from the main accuracy pipeline.
+The weight-only rows (including Snowflake int8/int6/int4) cast stored values back to float32 before matmul, so their storage win does not reach the compute path. The activation-quantized methods can dispatch true INT8 kernels. INT6 is included only as an intermediate precision/accuracy and packed-storage comparison; no native INT6 latency claim is made.
+
+The INT4/INT6/INT8 precision comparison is isolated from the main method sweep:
+`python run_precision_comparison.py`. The script uses the same trained float
+model, seeds, fine-tuning budget, accuracy, macro-F1, confidence intervals,
+TOST, and packed-size accounting for all three precisions. Standard Snowflake
+INT8 remains in the main experiment as the project's primary method, but INT6
+and INT4 do not add workload or columns to normal `main.py` runs.
 
 All methods optionally followed by 3 epochs of post-quantization fine-tuning. Compared against a param-matched MLP baseline (2 layers: FC+ReLU → output).
 
