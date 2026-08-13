@@ -131,7 +131,9 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     """
     Shared experiment loop for all tabular datasets.
 
-    get_data: callable(seed) -> (X_raw_tr, y_raw_tr, X_raw_test, y_raw_test) as NumPy arrays.
+    get_data: callable(seed) returning either
+      (X_raw_tr, y_raw_tr, X_raw_test, y_raw_test), or a subject-safe
+      (X_raw_tr, y_raw_tr, X_raw_val, y_raw_val, X_raw_test, y_raw_test).
       - For fixed loaders (HAR/ECG/EEG/HAPT): pass lambda seed: load_dataset()
     lit_baseline_fn: optional callable() -> nn.Module -- a fresh, dataset-specific
       literature baseline (e.g. ECGCNNBaseline, CompactHARMLP), not shaped to match
@@ -187,11 +189,14 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     n_params_lit = None
 
     for seed in seeds:
-        X_raw_tr, y_raw_tr, X_raw_test, y_raw_test = get_data(seed)
-
-        X_train_np, X_val_np, y_train_np, y_val_np = train_test_split(
-            X_raw_tr, y_raw_tr, test_size=0.1, random_state=seed, stratify=y_raw_tr
-        )
+        data = get_data(seed)
+        if len(data) == 6:
+            X_train_np, y_train_np, X_val_np, y_val_np, X_raw_test, y_raw_test = data
+        else:
+            X_raw_tr, y_raw_tr, X_raw_test, y_raw_test = data
+            X_train_np, X_val_np, y_train_np, y_val_np = train_test_split(
+                X_raw_tr, y_raw_tr, test_size=0.1, random_state=seed, stratify=y_raw_tr
+            )
 
         X_train = torch.tensor(X_train_np, dtype=torch.float32)
         y_train = torch.tensor(y_train_np, dtype=torch.long)

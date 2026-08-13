@@ -74,7 +74,7 @@ All methods optionally followed by 3 epochs of post-quantization fine-tuning. Co
 
 Snowflake matches or beats uncompressed on both current default datasets. TOST equivalence testing (±2% margin) confirms **13/16 method–dataset pairs are equivalent** (all 8/8 on HAPT; ECG fails on Snowflake/Global/QAT, all in the direction of compression *improving* accuracy past the margin, not degrading it).
 
-**HAR is no longer part of the default `python main.py` run** (default is now `ecg hapt`, 2026-07-22). HAR and HAPT were verified to use the *exact same* 21/9 subject-independent train/test split (independently confirmed — zero subject overlap in either), and HAPT's first 6 classes already cover HAR's task, so running both added little beyond what HAPT's larger, imbalanced class set already tests. HAR remains fully supported — the results above are unchanged and still valid — just opt-in via `--exp har` rather than automatic. See `docs/experiment_log.md`, 2026-07-22 entry.
+**HAR is no longer part of the default `python main.py` run.** HAR and HAPT were verified to use the *exact same* 21/9 subject-independent train/test split (independently confirmed — zero subject overlap in either), and HAPT's first 6 classes already cover HAR's task, so running both added little beyond what HAPT's larger, imbalanced class set already tests. The default runs `ecg hapt`; INCART remains available as an independent opt-in ECG dataset.
 
 **ECG uses the patient-independent (DS1/DS2) split**, not the original Kaggle random split. The original split was found to leak patient data between train/test (no patient ID, known to split by individual beat), inflating accuracy by ~13 percentage points relative to the (still-leaky) balanced-training version. See `docs/experiment_log.md`, 2026-07-20 and 2026-07-21 entries, for the full investigation. The old `load_ecg.py` (leaky) loader is kept in the repo for reference but is no longer used by the default pipeline.
 
@@ -205,6 +205,7 @@ pip install torch scikit-learn pandas numpy matplotlib torchinfo tqdm
 | UCI HAR *(opt-in — not in default run, see Results)* | [UCI ML Repository](https://archive.ics.uci.edu/dataset/240/human+activity+recognition+using+smartphones) | Manual — place in `data/har/` |
 | ECG Heartbeat | Kaggle `shayanfazeli/heartbeat` | Via Kaggle CLI on first load |
 | UCI HAPT | [UCI ML Repository](https://archive.ics.uci.edu/dataset/341/smartphone+based+recognition+of+human+activities+and+postural+transitions) | Manual — place in `data/hapt/` |
+| St Petersburg INCART ECG *(patient-split, 4-class AAMI)* | [PhysioNet](https://physionet.org/content/incartdb/1.0.0/) | Yes — downloaded and cached on first load |
 | EEG Brainwave *(unused, kept for reference)* | Kaggle `birdy654/eeg-brainwave-dataset-feeling-emotions` | Not wired into the experiment CLI — see leakage note above |
 
 For Kaggle datasets, set up `~/.kaggle/kaggle.json` with your credentials. `.npy` cache files are auto-generated on first load alongside the raw data.

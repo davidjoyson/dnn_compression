@@ -11,6 +11,7 @@ from src.experiments.ablation_study import (
 )
 from src.experiments.ecg_patient_experiment import run_ecg_patient
 from src.experiments.hapt_experiment import run_hapt
+from src.experiments.incart_experiment import run_incart
 
 from src.loaders.load_ecg_patient_split import load_ecg_patient_split
 from src.loaders.load_hapt import load_hapt
@@ -33,7 +34,7 @@ from src.reporting import (
 SEEDS  = (42, 0, 7, 1, 2, 3, 4, 5, 6, 8)
 EPOCHS = 50
 
-ALL_EXPERIMENTS = ["ecg", "hapt", "ablation", "component", "regularization"]
+ALL_EXPERIMENTS = ["ecg", "incart", "hapt", "ablation", "component", "regularization"]
 _DEFAULT_EXPERIMENTS = ["ecg", "hapt"]
 
 class _Tee:
@@ -119,6 +120,7 @@ def _run_regularization(results, timings, epochs, seeds):
 
 _EXP_TABLE = {
     "ecg":  ("ECG Heartbeat (Patient-Split, 5-class)",        "ECG Heartbeat", run_ecg_patient),
+    "incart": ("INCART ECG (Patient-Split, 4-class AAMI)",    "INCART ECG",    run_incart),
     "hapt": ("HAPT (UCI Smartphone, 12-class)",               "HAPT",          run_hapt),
 }
 
@@ -144,7 +146,7 @@ def main():
     parser.add_argument("--epochs", type=int, default=EPOCHS,
                         help=f"Training epochs per experiment (default: {EPOCHS})")
     parser.add_argument("--fine-tune-epochs", type=int, default=3,
-                        help="Post-quantization fine-tuning epochs for har/ecg (default: 3)")
+                        help="Post-quantization fine-tuning epochs (default: 3)")
     parser.add_argument("--seeds", type=int, nargs="+", default=list(SEEDS),
                         help=f"Random seeds to average over (default: {list(SEEDS)})")
     parser.add_argument("--arch", action="store_true", help="Print model architectures and exit")
@@ -202,6 +204,7 @@ def main():
 
     _model_dirs = {
         "ecg":  os.path.join(_models_root, "ecg"),
+        "incart": os.path.join(_models_root, "incart"),
         "hapt": os.path.join(_models_root, "hapt"),
     }
 
