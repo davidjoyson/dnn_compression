@@ -61,7 +61,8 @@ def confusion_matrix_eval(model, X, y, num_classes=1, device=None):
         else:
             preds = (model(X) > 0.5).float().cpu().numpy().ravel()
             labels = y.cpu().numpy().ravel()
-    return confusion_matrix(labels, preds)
+    matrix_labels = list(range(num_classes)) if num_classes > 1 else [0, 1]
+    return confusion_matrix(labels, preds, labels=matrix_labels)
 
 
 def per_class_stats_from_cm(cm, min_support=20):

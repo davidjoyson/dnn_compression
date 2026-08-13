@@ -76,24 +76,37 @@ def generate_plots(results):
             print(f"  Warning: Could not plot ablation: {e}")
 
     if "Ablation Study" in results and isinstance(results["Ablation Study"], dict):
-        try:
-            arch_ablation, cond_labels = {}, {}
-            for dataset, configs in results["Ablation Study"].items():
-                per_cond = {}
-                for i, res in enumerate(configs):
-                    key = f"cfg{i}"
-                    acc = res["accuracy_uncompressed"]
-                    per_cond[key] = {"mean": acc["mean"], "std": acc.get("std", 0.0)}
-                    cond_labels[key] = f"h1={res['config']['h1']}"
-                arch_ablation[dataset] = per_cond
-            if arch_ablation:
-                cond_order = sorted(cond_labels, key=lambda k: int(k[3:]))
-                plot_ablation_combined(arch_ablation, filename="combined/ablation_study_all.png",
-                                       title="Architecture Size Ablation (all datasets)",
-                                       condition_order=cond_order, condition_labels=cond_labels)
-                print("  Architecture ablation combined plot saved")
-        except Exception as e:
-            print(f"  Warning: Could not plot combined architecture ablation: {e}")
+        factor_meta = {
+            "branch_count": ("branches", "Branch Count"),
+            "branch_width": ("hidden_per_branch", "Branch Width"),
+            "hidden_size": ("h1", "Shared-Trunk Hidden Size"),
+        }
+        for factor, (config_key, title) in factor_meta.items():
+            try:
+                factor_results, cond_labels = {}, {}
+                for dataset, sweeps in results["Ablation Study"].items():
+                    configs = sweeps.get(factor, []) if isinstance(sweeps, dict) else []
+                    per_cond = {}
+                    for res in configs:
+                        value = res["config"][config_key]
+                        key = str(value)
+                        acc = res["accuracy_uncompressed"]
+                        per_cond[key] = {"mean": acc["mean"], "std": acc.get("std", 0.0)}
+                        cond_labels[key] = str(value)
+                    if per_cond:
+                        factor_results[dataset] = per_cond
+                if factor_results:
+                    cond_order = sorted(cond_labels, key=int)
+                    plot_ablation_combined(
+                        factor_results,
+                        filename=f"combined/ablation_{factor}.png",
+                        title=f"{title} Ablation (one factor at a time)",
+                        condition_order=cond_order,
+                        condition_labels=cond_labels,
+                    )
+                    print(f"  {title} ablation combined plot saved")
+            except Exception as e:
+                print(f"  Warning: Could not plot {factor} ablation: {e}")
 
     for name, r in results.items():
         if isinstance(r, dict) and r.get("curve_data") is not None:
@@ -122,6 +135,7 @@ def generate_plots(results):
                     title=name,
                     filename=f"{slug}_confusion.png",
                     class_names=r.get("class_names"),
+                    num_seeds=r.get("conf_matrix_num_seeds"),
                 )
                 print(f"  {name} confusion matrix saved")
             except Exception as e:
@@ -202,13 +216,15 @@ def generate_plots(results):
         if r.get("conf_matrix") is not None and r.get("class_names") is not None:
             try:
                 plot_per_class_f1(r["conf_matrix"], r["class_names"],
-                                  title=name, filename=f"{slug}_per_class_f1.png")
+                                  title=name, filename=f"{slug}_per_class_f1.png",
+                                  num_seeds=r.get("conf_matrix_num_seeds"))
                 print(f"  {name} per-class F1 saved")
             except Exception as e:
                 print(f"  Warning: Could not plot per-class F1 for {name}: {e}")
             try:
                 plot_compression_delta(r["conf_matrix"], r["class_names"],
-                                       title=name, filename=f"{slug}_compression_delta.png")
+                                       title=name, filename=f"{slug}_compression_delta.png",
+                                       num_seeds=r.get("conf_matrix_num_seeds"))
                 print(f"  {name} compression delta saved")
             except Exception as e:
                 print(f"  Warning: Could not plot compression delta for {name}: {e}")

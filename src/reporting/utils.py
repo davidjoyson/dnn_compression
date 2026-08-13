@@ -85,6 +85,8 @@ def store_simple(results, timings, name, out, elapsed):
         "loss_history":    out.get("loss_history"),
         "val_acc_history": out.get("val_acc_history"),
         "conf_matrix":     out.get("conf_matrix"),
+        "conf_matrix_per_seed": out.get("conf_matrix_per_seed"),
+        "conf_matrix_num_seeds": out.get("conf_matrix_num_seeds"),
         "class_names":     out.get("class_names"),
         "weight_dist":     out.get("weight_dist"),
         "branch_diversity":         out.get("branch_diversity"),

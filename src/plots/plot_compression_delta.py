@@ -4,7 +4,8 @@ from .save_utils import save_fig
 from .style import apply_style
 
 
-def plot_compression_delta(conf_matrix, class_names, title="", filename=None):
+def plot_compression_delta(conf_matrix, class_names, title="", filename=None,
+                           num_seeds=None):
     """Bar chart of per-class recall change (compressed minus uncompressed)."""
     apply_style()
 
@@ -39,4 +40,7 @@ def plot_compression_delta(conf_matrix, class_names, title="", filename=None):
 
     if filename is None:
         filename = f"{title.lower().replace(' ', '_').replace('/', '_')}_compression_delta.png"
+    if num_seeds and num_seeds > 1:
+        fig.text(0.5, 0.01, f"Computed from the mean confusion matrix across {num_seeds} seeds",
+                 ha="center", fontsize=8, color="#555555")
     save_fig(filename)

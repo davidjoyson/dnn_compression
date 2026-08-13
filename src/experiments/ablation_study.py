@@ -13,10 +13,11 @@ from src.compression.topology_sharing import apply_topology_sharing
 
 def run_ablation(configs, X_train, y_train, X_test, y_test, epochs=50, seeds=(42,), num_classes=1):
     """
-    configs: list of dicts with keys h1, h2, branches, hidden_per_branch.
-    Trains one model per config per seed and reports mean +/- std accuracy
-    before/after compression. Size is deterministic per config (doesn't
-    depend on trained weights), so it stays a plain scalar.
+    configs: list of complete architecture dictionaries with keys h1, h2,
+    branches, and hidden_per_branch. The caller is responsible for holding all
+    but one field fixed within a sweep. Trains one model per config per seed
+    and reports mean +/- std accuracy before/after compression. Size is
+    deterministic per config, so it stays a plain scalar.
     """
     results = []
 
@@ -52,7 +53,9 @@ def run_ablation(configs, X_train, y_train, X_test, y_test, epochs=50, seeds=(42
             )
 
             train(model_u, X_train, y_train, epochs=epochs, num_classes=num_classes,
-                  verbose=True, label=f"h1={cfg['h1']} h2={cfg['h2']} br={cfg['branches']} seed={seed}")
+                  verbose=True,
+                  label=(f"h1={cfg['h1']} h2={cfg['h2']} br={cfg['branches']} "
+                         f"bw={cfg['hidden_per_branch']} seed={seed}"))
             acc_u_list.append(evaluate(model_u, X_test, y_test, num_classes=num_classes))
             mse_u_list.append(mse_score(model_u, X_test, y_test) if num_classes == 1 else float("nan"))
             if size_u is None:

@@ -104,16 +104,19 @@ def print_summary(results, timings):
 
         if name == "Ablation Study" and isinstance(r, dict):
             print(f"{name}:")
-            for dataset, configs in r.items():
+            for dataset, sweeps in r.items():
                 print(f"  [{dataset}]")
-                for i, cfg_r in enumerate(configs):
-                    cfg = cfg_r.get("config", {})
-                    au = cfg_r.get("accuracy_uncompressed", {})
-                    ac = cfg_r.get("accuracy_compressed", {})
-                    tag = f"h1={cfg.get('h1','?')} h2={cfg.get('h2','?')} br={cfg.get('branches','?')}"
-                    print(f"    Config {i+1} {tag}: "
-                          f"acc_u={au.get('mean', float('nan')):.4f} +/- {au.get('std', 0.0):.4f}  "
-                          f"acc_c={ac.get('mean', float('nan')):.4f} +/- {ac.get('std', 0.0):.4f}")
+                for factor, configs in sweeps.items():
+                    print(f"    {factor}:")
+                    for cfg_r in configs:
+                        cfg = cfg_r.get("config", {})
+                        au = cfg_r.get("accuracy_uncompressed", {})
+                        ac = cfg_r.get("accuracy_compressed", {})
+                        tag = (f"h1={cfg.get('h1','?')} h2={cfg.get('h2','?')} "
+                               f"br={cfg.get('branches','?')} bw={cfg.get('hidden_per_branch','?')}")
+                        print(f"      {tag}: "
+                              f"acc_u={au.get('mean', float('nan')):.4f} +/- {au.get('std', 0.0):.4f}  "
+                              f"acc_c={ac.get('mean', float('nan')):.4f} +/- {ac.get('std', 0.0):.4f}")
             print(time_str, end="")
             continue
 
@@ -237,6 +240,9 @@ def print_summary(results, timings):
         cm = r.get("conf_matrix") or {}
         cm_u, cm_c = cm.get("uncompressed"), cm.get("compressed")
         if cm_u is not None:
+            cm_n = r.get("conf_matrix_num_seeds")
+            if cm_n and cm_n > 1:
+                print(f"  Confusion metrics: aggregate mean across {cm_n} seeds")
             names = r.get("class_names") or [f"Class {i}" for i in range(len(cm_u))]
             stats_u = per_class_stats_from_cm(cm_u)
             stats_c = per_class_stats_from_cm(cm_c) if cm_c is not None else None

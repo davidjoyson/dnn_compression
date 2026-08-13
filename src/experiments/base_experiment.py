@@ -151,7 +151,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     f1_u_list, f1_c_list, f1_global_list, f1_dynamic_list, f1_static_list, f1_mlp_list, f1_mlp_c_list = [], [], [], [], [], [], []
     f1_perchan_list, f1_qat_list, f1_mixed_list = [], [], []
     f1_snowflakestatic_list = []
-    conf_matrix_u, conf_matrix_c = None, None
+    conf_matrices_u, conf_matrices_c = [], []
     size_u, size_c = None, None
     size_global, size_dynamic, size_static = None, None, None
     size_perchan, size_qat, size_mixed = None, None, None
@@ -224,7 +224,9 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         )
         acc_u_list.append(evaluate(model_u, X_test, y_test, num_classes=num_classes))
         f1_u_list.append(f1_eval(model_u, X_test, y_test, num_classes=num_classes))
-        conf_matrix_u = confusion_matrix_eval(model_u, X_test, y_test, num_classes=num_classes)
+        conf_matrices_u.append(
+            confusion_matrix_eval(model_u, X_test, y_test, num_classes=num_classes)
+        )
 
         if curve_data is None:
             _y_score_u = predict_proba_multiclass(model_u, X_test)
@@ -260,7 +262,9 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             best_acc_c = acc_c_list[-1]
             best_compressed_c = compressed
         f1_c_list.append(f1_eval(model_u, X_test, y_test, num_classes=num_classes))
-        conf_matrix_c = confusion_matrix_eval(model_u, X_test, y_test, num_classes=num_classes)
+        conf_matrices_c.append(
+            confusion_matrix_eval(model_u, X_test, y_test, num_classes=num_classes)
+        )
 
         if curve_data is None:
             curve_data = {
@@ -551,6 +555,8 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     }
 
     n     = len(seeds)
+    conf_matrix_u = np.mean(np.stack(conf_matrices_u), axis=0) if conf_matrices_u else None
+    conf_matrix_c = np.mean(np.stack(conf_matrices_c), axis=0) if conf_matrices_c else None
     _mean = lambda lst: float(sum(lst) / n)
     _std  = lambda lst: float(torch.tensor(lst).std().item()) if n > 1 else 0.0
     # static quant may fail on some seeds; filter None before aggregating
@@ -673,6 +679,11 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         "loss_history":     loss_history,
         "val_acc_history":  val_acc_history,
         "conf_matrix":      {"uncompressed": conf_matrix_u, "compressed": conf_matrix_c},
+        "conf_matrix_per_seed": {
+            "uncompressed": conf_matrices_u,
+            "compressed": conf_matrices_c,
+        },
+        "conf_matrix_num_seeds": n,
         "class_names":      class_names,
         "weight_dist":      weight_dist,
         "branch_diversity": branch_diversity,

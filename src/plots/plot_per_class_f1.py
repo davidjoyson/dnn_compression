@@ -16,7 +16,7 @@ def _f1_from_cm(cm):
     return f1s
 
 
-def _plot_chunk(names, f1_u, f1_c, title, filename):
+def _plot_chunk(names, f1_u, f1_c, title, filename, num_seeds=None):
     n = len(names)
     x = np.arange(n)
     width = 0.35
@@ -42,10 +42,14 @@ def _plot_chunk(names, f1_u, f1_c, title, filename):
         for i, v in enumerate(f1_c):
             ax.text(i + width / 2, v + tick_h, f"{v:.2f}", ha="center", va="bottom", fontsize=8)
 
+    if num_seeds and num_seeds > 1:
+        fig.text(0.5, 0.01, f"Computed from the mean confusion matrix across {num_seeds} seeds",
+                 ha="center", fontsize=8, color="#555555")
     save_fig(filename)
 
 
-def plot_per_class_f1(conf_matrix_dict, class_names, title="", filename=None, max_per_plot=6):
+def plot_per_class_f1(conf_matrix_dict, class_names, title="", filename=None,
+                      max_per_plot=6, num_seeds=None):
     """
     conf_matrix_dict: {"uncompressed": cm_array, "compressed": cm_array}
     Grouped bar chart showing per-class F1 before and after Snowflake compression.
@@ -71,4 +75,5 @@ def plot_per_class_f1(conf_matrix_dict, class_names, title="", filename=None, ma
     for part, (start, end) in enumerate(chunks, 1):
         chunk_filename = base if len(chunks) == 1 else f"{stem}_pt{part}.{ext}"
         f1_c_chunk = f1_c[start:end] if f1_c is not None else None
-        _plot_chunk(names[start:end], f1_u[start:end], f1_c_chunk, title, chunk_filename)
+        _plot_chunk(names[start:end], f1_u[start:end], f1_c_chunk, title,
+                    chunk_filename, num_seeds=num_seeds)

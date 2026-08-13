@@ -4,7 +4,8 @@ from .save_utils import save_fig
 from .style import apply_style
 
 
-def plot_confusion_matrix(conf_matrix_data, title="", filename=None, class_names=None):
+def plot_confusion_matrix(conf_matrix_data, title="", filename=None, class_names=None,
+                          num_seeds=None):
     """
     conf_matrix_data: dict with keys "uncompressed" and optionally "compressed" (numpy arrays)
     Plots side-by-side normalized confusion matrices.
@@ -43,7 +44,11 @@ def plot_confusion_matrix(conf_matrix_data, title="", filename=None, class_names
         ax.spines["right"].set_visible(False)
 
         thresh = 0.5
-        cell_text = (lambda v, c: f"{v:.2f}") if n > 6 else (lambda v, c: f"{v:.2f}\n({c})")
+        def cell_text(value, count):
+            if n > 6:
+                return f"{value:.2f}"
+            count_text = f"{count:.1f}" if num_seeds and num_seeds > 1 else f"{count:g}"
+            return f"{value:.2f}\n({count_text})"
         for i in range(n):
             for j in range(n):
                 color = "white" if cm_norm[i, j] > thresh else "#333333"
@@ -53,4 +58,7 @@ def plot_confusion_matrix(conf_matrix_data, title="", filename=None, class_names
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     fig.suptitle(f"{title} — Confusion Matrix", fontsize=12, fontweight="bold", y=1.02)
+    if num_seeds and num_seeds > 1:
+        fig.text(0.5, 0.005, f"Element-wise mean across {num_seeds} seeds",
+                 ha="center", fontsize=8, color="#555555")
     save_fig(filename or f"{title.lower().replace(' ', '_')}_confusion.png")

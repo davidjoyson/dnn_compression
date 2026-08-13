@@ -65,12 +65,19 @@ _ABLATION_DATASETS = {
     "hapt": (lambda: load_hapt(balance=False), 12),
 }
 
-# 3 architecture sizes, small -> large, same shape family as _ABLATION_CONFIG
-_ARCH_SIZE_CONFIGS = [
-    {"h1": 16, "h2":  8, "branches": 2, "hidden_per_branch": 4},
-    {"h1": 32, "h2": 16, "branches": 4, "hidden_per_branch": 4},
-    {"h1": 64, "h2": 32, "branches": 6, "hidden_per_branch": 4},
-]
+# Controlled one-factor-at-a-time architecture sweeps around _ABLATION_CONFIG.
+# Every sweep changes exactly one dimension so its effect is identifiable.
+_ARCH_ABLATION_SWEEPS = {
+    "branch_count": [
+        {**_ABLATION_CONFIG, "branches": value} for value in (2, 4, 8, 12)
+    ],
+    "branch_width": [
+        {**_ABLATION_CONFIG, "hidden_per_branch": value} for value in (2, 4, 8, 16)
+    ],
+    "hidden_size": [
+        {**_ABLATION_CONFIG, "h1": value} for value in (16, 32, 64, 128)
+    ],
+}
 
 
 def _run_ablation(results, timings, epochs, seeds):
@@ -80,10 +87,13 @@ def _run_ablation(results, timings, epochs, seeds):
     for name, (loader, num_classes) in _ABLATION_DATASETS.items():
         print(f"  -- dataset: {name} --")
         X_tr, y_tr, X_te, y_te = loader()
-        out[name] = run_ablation(
-            configs=_ARCH_SIZE_CONFIGS, X_train=X_tr, y_train=y_tr, X_test=X_te, y_test=y_te,
-            epochs=epochs, seeds=seeds, num_classes=num_classes,
-        )
+        out[name] = {}
+        for factor, configs in _ARCH_ABLATION_SWEEPS.items():
+            print(f"    factor: {factor}")
+            out[name][factor] = run_ablation(
+                configs=configs, X_train=X_tr, y_train=y_tr, X_test=X_te, y_test=y_te,
+                epochs=epochs, seeds=seeds, num_classes=num_classes,
+            )
     results["Ablation Study"] = out
     timings["Ablation Study"] = time.time() - t0
 
