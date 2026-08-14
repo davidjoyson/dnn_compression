@@ -47,6 +47,28 @@ def f1_eval(model, X, y, num_classes=1, device=None):
             return float(f1_score(y.cpu().numpy().ravel(), preds, zero_division=0))
 
 
+def balanced_accuracy_eval(model, X, y, num_classes=1, device=None):
+    """Balanced accuracy (mean class recall) using the same prediction path."""
+    from sklearn.metrics import confusion_matrix
+    device = device or _DEVICE
+    model = model.to(device)
+    X = X.to(device)
+    y = y.to(device)
+    model.eval()
+    with torch.no_grad():
+        if num_classes > 1:
+            preds = model(X).argmax(dim=1).cpu().numpy()
+            labels = y.cpu().numpy()
+        else:
+            preds = (model(X) > 0.5).float().cpu().numpy().ravel()
+            labels = y.cpu().numpy().ravel()
+    matrix_labels = list(range(num_classes)) if num_classes > 1 else [0, 1]
+    cm = confusion_matrix(labels, preds, labels=matrix_labels).astype(float)
+    support = cm.sum(axis=1)
+    recall = np.divide(np.diag(cm), support, out=np.zeros_like(support), where=support > 0)
+    return float(np.mean(recall))
+
+
 def confusion_matrix_eval(model, X, y, num_classes=1, device=None):
     from sklearn.metrics import confusion_matrix
     device = device or _DEVICE

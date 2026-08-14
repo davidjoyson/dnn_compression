@@ -79,7 +79,7 @@ def generate_plots(results):
         factor_meta = {
             "branch_count": ("branches", "Branch Count"),
             "branch_width": ("hidden_per_branch", "Branch Width"),
-            "hidden_size": ("h1", "Shared-Trunk Hidden Size"),
+            "hidden_size": (("h1", "h2"), "Shared-Trunk Hidden Size"),
         }
         for factor, (config_key, title) in factor_meta.items():
             try:
@@ -88,15 +88,21 @@ def generate_plots(results):
                     configs = sweeps.get(factor, []) if isinstance(sweeps, dict) else []
                     per_cond = {}
                     for res in configs:
-                        value = res["config"][config_key]
-                        key = str(value)
+                        if isinstance(config_key, tuple):
+                            values = tuple(res["config"][k] for k in config_key)
+                            key = "x".join(map(str, values))
+                            label = "/".join(map(str, values))
+                        else:
+                            value = res["config"][config_key]
+                            key = str(value)
+                            label = str(value)
                         acc = res["accuracy_uncompressed"]
                         per_cond[key] = {"mean": acc["mean"], "std": acc.get("std", 0.0)}
-                        cond_labels[key] = str(value)
+                        cond_labels[key] = label
                     if per_cond:
                         factor_results[dataset] = per_cond
                 if factor_results:
-                    cond_order = sorted(cond_labels, key=int)
+                    cond_order = sorted(cond_labels, key=lambda key: int(key.split("x")[0]))
                     plot_ablation_combined(
                         factor_results,
                         filename=f"combined/ablation_{factor}.png",

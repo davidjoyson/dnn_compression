@@ -70,6 +70,11 @@ def save_metrics_csv(results, run_dir):
             "tost_snowflake_ci_high":      r.get("tost", {}).get("compressed",        {}).get("ci_high"),
             "tost_snowflake_p_low":        r.get("tost", {}).get("compressed",        {}).get("p_low"),
             "tost_snowflake_p_high":       r.get("tost", {}).get("compressed",        {}).get("p_high"),
+            "balanced_accuracy_uncompressed": r.get("balanced_accuracy_uncompressed", ""),
+            "balanced_accuracy_compressed": r.get("balanced_accuracy_compressed", ""),
+            "ci_95_balanced_accuracy_uncompressed": r.get("ci_95_balanced_accuracy", {}).get("uncompressed", ""),
+            "ci_95_balanced_accuracy_compressed": r.get("ci_95_balanced_accuracy", {}).get("compressed", ""),
+            "tost_balanced_accuracy_equiv": r.get("tost_balanced_accuracy", {}).get("compressed", {}).get("equivalent"),
         })
 
     if not rows:
@@ -238,6 +243,24 @@ def print_summary(results, timings):
             print(f"  Global int8 F1   : {f1_global:.4f}  (delta={f1_global - f1_u:+.4f})")
         if not math.isnan(f1_dyn):
             print(f"  Dynamic F1       : {f1_dyn:.4f}  (delta={f1_dyn - f1_u:+.4f})")
+        bal = r.get("balanced_accuracy", {})
+        bal_std = r.get("balanced_accuracy_std", {})
+        bal_ci = r.get("ci_95_balanced_accuracy", {})
+        if bal:
+            print("  Balanced Accuracy (per-seed aggregate):")
+            for key, label in [
+                ("uncompressed", "Uncompressed"), ("compressed", "Snowflake"),
+                ("compressed_global", "Global"), ("compressed_dynamic", "Dynamic"),
+                ("compressed_static", "Static"),
+                ("compressed_snowflake_static", "SF+Static"),
+                ("compressed_perchan", "Per-channel"), ("compressed_qat", "QAT"),
+                ("compressed_mixed", "Mixed"),
+            ]:
+                value = bal.get(key)
+                if value is None:
+                    continue
+                print(f"    {label:<12}: {value:.4f} +/- {bal_std.get(key, 0.0):.4f}"
+                      f"{_ci_str(to_float(bal_ci.get(key, 0.0)))}")
         if not math.isnan(f1_mlp):
             print(f"  MLP Baseline F1  : {f1_mlp:.4f}")
         if not math.isnan(f1_mlp_c):
@@ -326,6 +349,18 @@ def print_summary(results, timings):
             if rows_f1:
                 print(f"  Equivalence (TOST, e=2%, n={n_seeds}, macro-F1):")
                 for lbl, t in rows_f1:
+                    verdict = "EQUIV    " if t["equivalent"] else "NOT EQUIV"
+                    print(f"    {lbl}: {verdict}  diff={t['mean_diff']:+.4f}"
+                          f"  CI=[{t['ci_low']:+.4f}, {t['ci_high']:+.4f}]"
+                          f"  (p_low={t['p_low']:.4f}, p_high={t['p_high']:.4f})")
+
+        tost_bal_r = r.get("tost_balanced_accuracy", {})
+        if tost_bal_r:
+            rows_bal = [(lbl, tost_bal_r[k]) for k, lbl in _TOST_LABELS
+                        if k in tost_bal_r and tost_bal_r[k].get("equivalent") is not None]
+            if rows_bal:
+                print(f"  Equivalence (TOST, e=2%, n={n_seeds}, balanced accuracy):")
+                for lbl, t in rows_bal:
                     verdict = "EQUIV    " if t["equivalent"] else "NOT EQUIV"
                     print(f"    {lbl}: {verdict}  diff={t['mean_diff']:+.4f}"
                           f"  CI=[{t['ci_low']:+.4f}, {t['ci_high']:+.4f}]"
@@ -425,6 +460,26 @@ def print_summary(results, timings):
                 ]
                 print(f"    Throughput     : " + "  |  ".join(tp_parts) + " sps")
 
+        profiles = r.get("resource_profiles", {})
+        if profiles:
+            print("  Fair Resource Profile (float32 models, identical protocol):")
+            labels = {
+                "dendritic": "Dendritic", "mlp": "Matched MLP",
+                "layer_matched": "LayerMatchedMLP", "literature": "Literature baseline",
+            }
+            for key, profile in profiles.items():
+                params = profile.get("params")
+                size_kb = profile.get("model_size_kb")
+                latency = profile.get("latency_us_per_sample")
+                params_text = f"{params:,}" if params is not None else "?"
+                size_text = f"{size_kb:.2f}" if size_kb is not None else "?"
+                latency_text = f"{latency:.2f}" if latency is not None else "?"
+                print(f"    {labels.get(key, key):<20}: params={params_text}  "
+                      f"MACs={profile.get('flops_per_sample') or '?'}  "
+                      f"size={size_text}KB  "
+                      f"activation={profile.get('activation_mem_kb') or '?'}KB  "
+                      f"latency={latency_text}us/sample")
+
         print(time_str, end="")
 
 
@@ -464,6 +519,15 @@ def save_per_seed_csv(results, run_dir):
                 "f1_compressed_mixed":     _ps("f1_compressed_mixed", i),
                 "f1_compressed_int4":      _ps("f1_compressed_int4", i),
                 "f1_compressed_int6":      _ps("f1_compressed_int6", i),
+                "bal_uncompressed":        _ps("bal_uncompressed", i),
+                "bal_compressed":          _ps("bal_compressed", i),
+                "bal_compressed_global":   _ps("bal_compressed_global", i),
+                "bal_compressed_dynamic":  _ps("bal_compressed_dynamic", i),
+                "bal_compressed_static":   _ps("bal_compressed_static", i),
+                "bal_compressed_snowflake_static": _ps("bal_compressed_snowflake_static", i),
+                "bal_compressed_perchan":  _ps("bal_compressed_perchan", i),
+                "bal_compressed_qat":      _ps("bal_compressed_qat", i),
+                "bal_compressed_mixed":    _ps("bal_compressed_mixed", i),
             })
     if not rows:
         return

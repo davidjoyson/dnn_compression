@@ -75,7 +75,8 @@ _ARCH_ABLATION_SWEEPS = {
         {**_ABLATION_CONFIG, "hidden_per_branch": value} for value in (2, 4, 8, 16)
     ],
     "hidden_size": [
-        {**_ABLATION_CONFIG, "h1": value} for value in (16, 32, 64, 128)
+        {**_ABLATION_CONFIG, "h1": h1, "h2": h2}
+        for h1, h2 in ((16, 8), (32, 16), (64, 32), (128, 64))
     ],
 }
 

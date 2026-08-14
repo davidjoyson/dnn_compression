@@ -5,7 +5,10 @@ import numpy as np
 import torch
 from sklearn.model_selection import train_test_split
 from src.training.train import train
-from src.training.evaluate import evaluate, f1_eval, confusion_matrix_eval, predict_proba_multiclass
+from src.training.evaluate import (
+    evaluate, f1_eval, balanced_accuracy_eval, confusion_matrix_eval,
+    predict_proba_multiclass,
+)
 from src.models.dendritic_network import DendriticNetwork
 from src.models.mlp_baseline import MLPBaseline, LayerMatchedMLP
 from src.compression.compression_pipeline import (
@@ -42,7 +45,8 @@ def compress_all_methods(model, X_train, y_train, X_test, y_test, num_classes, f
     (e.g. ECGCNNBaseline) -- mixed_layers must match the model's actual first/
     last layer names for "Mixed precision" to mean the same thing across
     architectures (see compress_model_mixed's docstring). Returns
-    {method: (acc, f1, size_bytes)}; failed FX methods return (None, None, None).
+    {method: (acc, f1, balanced_accuracy, size_bytes)}; failed methods return
+    (None, None, None, None).
     """
     original_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
     results = {}
@@ -55,6 +59,7 @@ def compress_all_methods(model, X_train, y_train, X_test, y_test, num_classes, f
     decompress_model(c, model)
     results["snowflake"] = (evaluate(model, X_test, y_test, num_classes=num_classes),
                             f1_eval(model, X_test, y_test, num_classes=num_classes),
+                            balanced_accuracy_eval(model, X_test, y_test, num_classes=num_classes),
                             compressed_size_bytes(c))
 
     reset()
@@ -62,12 +67,14 @@ def compress_all_methods(model, X_train, y_train, X_test, y_test, num_classes, f
     decompress_model(c, model)
     results["global"] = (evaluate(model, X_test, y_test, num_classes=num_classes),
                          f1_eval(model, X_test, y_test, num_classes=num_classes),
+                         balanced_accuracy_eval(model, X_test, y_test, num_classes=num_classes),
                          compressed_size_bytes(c))
 
     reset()
     mq = compress_model_dynamic(model)
     results["dynamic"] = (evaluate(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
                           f1_eval(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
+                          balanced_accuracy_eval(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
                           dynamic_model_size_bytes(mq))
 
     reset()
@@ -75,20 +82,22 @@ def compress_all_methods(model, X_train, y_train, X_test, y_test, num_classes, f
         mq = compress_model_static(model, calibration_data=(X_train, y_train))
         results["static"] = (evaluate(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
                              f1_eval(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
+                             balanced_accuracy_eval(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
                              static_model_size_bytes(mq))
     except Exception as e:
         print(f"[warn] Static quantization failed: {e}")
-        results["static"] = (None, None, None)
+        results["static"] = (None, None, None, None)
 
     reset()
     try:
         mq = compress_model_snowflake_static(model, calibration_data=(X_train, y_train))
         results["snowflake_static"] = (evaluate(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
                                        f1_eval(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
+                                       balanced_accuracy_eval(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
                                        static_model_size_bytes(mq))
     except Exception as e:
         print(f"[warn] Snowflake+Static quantization failed: {e}")
-        results["snowflake_static"] = (None, None, None)
+        results["snowflake_static"] = (None, None, None, None)
 
     reset()
     try:
@@ -96,10 +105,11 @@ def compress_all_methods(model, X_train, y_train, X_test, y_test, num_classes, f
         decompress_model_per_channel(c, model)
         results["perchan"] = (evaluate(model, X_test, y_test, num_classes=num_classes),
                               f1_eval(model, X_test, y_test, num_classes=num_classes),
+                              balanced_accuracy_eval(model, X_test, y_test, num_classes=num_classes),
                               per_channel_size_bytes(c))
     except Exception as e:
         print(f"[warn] Per-channel quantization failed: {e}")
-        results["perchan"] = (None, None, None)
+        results["perchan"] = (None, None, None, None)
 
     reset()
     try:
@@ -107,20 +117,22 @@ def compress_all_methods(model, X_train, y_train, X_test, y_test, num_classes, f
                                 num_classes=num_classes)
         results["qat"] = (evaluate(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
                           f1_eval(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
+                          balanced_accuracy_eval(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
                           static_model_size_bytes(mq))
     except Exception as e:
         print(f"[warn] QAT failed: {e}")
-        results["qat"] = (None, None, None)
+        results["qat"] = (None, None, None, None)
 
     reset()
     try:
         mq = compress_model_mixed(model, calibration_data=(X_train, y_train), mixed_layers=mixed_layers)
         results["mixed"] = (evaluate(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
                             f1_eval(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
+                            balanced_accuracy_eval(mq, X_test, y_test, num_classes=num_classes, device="cpu"),
                             mixed_model_size_bytes(mq))
     except Exception as e:
         print(f"[warn] Mixed precision failed: {e}")
-        results["mixed"] = (None, None, None)
+        results["mixed"] = (None, None, None, None)
 
     reset()
     return results
@@ -151,6 +163,10 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     f1_u_list, f1_c_list, f1_global_list, f1_dynamic_list, f1_static_list, f1_mlp_list, f1_mlp_c_list = [], [], [], [], [], [], []
     f1_perchan_list, f1_qat_list, f1_mixed_list = [], [], []
     f1_snowflakestatic_list = []
+    bal_u_list, bal_c_list, bal_global_list, bal_dynamic_list = [], [], [], []
+    bal_static_list, bal_snowflakestatic_list = [], []
+    bal_perchan_list, bal_qat_list, bal_mixed_list = [], [], []
+    bal_mlp_u_list = []
     conf_matrices_u, conf_matrices_c = [], []
     size_u, size_c = None, None
     size_global, size_dynamic, size_static = None, None, None
@@ -167,23 +183,29 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
     branch_diversity_control = None
     output_precision = None
     model_float = None
+    resource_profiles = {}
 
     # MLP + LayerMatchedMLP across all compression methods (professor point 2/9:
     # baselines must be tested with the same quantization methods as Dendritic)
     mlp_acc  = {m: [] for m in COMPARISON_METHODS}
     mlp_f1   = {m: [] for m in COMPARISON_METHODS}
+    mlp_bal  = {m: [] for m in COMPARISON_METHODS}
     mlp_size = {}
     lm_acc_u_list, lm_f1_u_list = [], []
+    lm_bal_u_list = []
     lm_acc  = {m: [] for m in COMPARISON_METHODS}
     lm_f1   = {m: [] for m in COMPARISON_METHODS}
+    lm_bal  = {m: [] for m in COMPARISON_METHODS}
     lm_size = {}
     size_lm_u = None
     n_params_lm = None
 
     # Optional dataset-specific literature baseline (ECGCNNBaseline, CompactHARMLP, ...)
     lit_acc_u_list, lit_f1_u_list = [], []
+    lit_bal_u_list = []
     lit_acc  = {m: [] for m in COMPARISON_METHODS}
     lit_f1   = {m: [] for m in COMPARISON_METHODS}
+    lit_bal  = {m: [] for m in COMPARISON_METHODS}
     lit_size = {}
     size_lit_u = None
     n_params_lit = None
@@ -224,6 +246,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         )
         acc_u_list.append(evaluate(model_u, X_test, y_test, num_classes=num_classes))
         f1_u_list.append(f1_eval(model_u, X_test, y_test, num_classes=num_classes))
+        bal_u_list.append(balanced_accuracy_eval(model_u, X_test, y_test, num_classes=num_classes))
         conf_matrices_u.append(
             confusion_matrix_eval(model_u, X_test, y_test, num_classes=num_classes)
         )
@@ -262,6 +285,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             best_acc_c = acc_c_list[-1]
             best_compressed_c = compressed
         f1_c_list.append(f1_eval(model_u, X_test, y_test, num_classes=num_classes))
+        bal_c_list.append(balanced_accuracy_eval(model_u, X_test, y_test, num_classes=num_classes))
         conf_matrices_c.append(
             confusion_matrix_eval(model_u, X_test, y_test, num_classes=num_classes)
         )
@@ -283,6 +307,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             output_precision["global"] = output_divergence(model_float, model_u, X_test, num_classes)
         acc_global_list.append(evaluate(model_u, X_test, y_test, num_classes=num_classes))
         f1_global_list.append(f1_eval(model_u, X_test, y_test, num_classes=num_classes))
+        bal_global_list.append(balanced_accuracy_eval(model_u, X_test, y_test, num_classes=num_classes))
 
         # PyTorch dynamic quantization
         model_u.load_state_dict(original_state)
@@ -291,6 +316,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             output_precision["dynamic"] = output_divergence(model_float, model_dynamic, X_test, num_classes)
         acc_dynamic_list.append(evaluate(model_dynamic, X_test, y_test, num_classes=num_classes, device="cpu"))
         f1_dynamic_list.append(f1_eval(model_dynamic, X_test, y_test, num_classes=num_classes, device="cpu"))
+        bal_dynamic_list.append(balanced_accuracy_eval(model_dynamic, X_test, y_test, num_classes=num_classes, device="cpu"))
 
         # Static quantization (true INT8: both weights and activations)
         model_u.load_state_dict(original_state)
@@ -300,10 +326,12 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
                 output_precision["static"] = output_divergence(model_float, model_static, X_test, num_classes)
             acc_static_list.append(evaluate(model_static, X_test, y_test, num_classes=num_classes, device="cpu"))
             f1_static_list.append(f1_eval(model_static, X_test, y_test, num_classes=num_classes, device="cpu"))
+            bal_static_list.append(balanced_accuracy_eval(model_static, X_test, y_test, num_classes=num_classes, device="cpu"))
         except Exception as e:
             print(f"[warn] Static quantization failed: {e}")
             acc_static_list.append(None)
             f1_static_list.append(None)
+            bal_static_list.append(None)
             model_static = None
 
         # Snowflake+Static (Snowflake per-layer weight scale + INT8 activations)
@@ -314,10 +342,12 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
                 output_precision["snowflake_static"] = output_divergence(model_float, model_snowflakestatic, X_test, num_classes)
             acc_snowflakestatic_list.append(evaluate(model_snowflakestatic, X_test, y_test, num_classes=num_classes, device="cpu"))
             f1_snowflakestatic_list.append(f1_eval(model_snowflakestatic, X_test, y_test, num_classes=num_classes, device="cpu"))
+            bal_snowflakestatic_list.append(balanced_accuracy_eval(model_snowflakestatic, X_test, y_test, num_classes=num_classes, device="cpu"))
         except Exception as e:
             print(f"[warn] Snowflake+Static quantization failed: {e}")
             acc_snowflakestatic_list.append(None)
             f1_snowflakestatic_list.append(None)
+            bal_snowflakestatic_list.append(None)
             model_snowflakestatic = None
 
         # Per-channel int8 (one scale per output neuron)
@@ -329,10 +359,12 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
                 output_precision["perchan"] = output_divergence(model_float, model_u, X_test, num_classes)
             acc_perchan_list.append(evaluate(model_u, X_test, y_test, num_classes=num_classes))
             f1_perchan_list.append(f1_eval(model_u, X_test, y_test, num_classes=num_classes))
+            bal_perchan_list.append(balanced_accuracy_eval(model_u, X_test, y_test, num_classes=num_classes))
         except Exception as e:
             print(f"[warn] Per-channel quantization failed: {e}")
             acc_perchan_list.append(None)
             f1_perchan_list.append(None)
+            bal_perchan_list.append(None)
             compressed_perchan = None
 
         # QAT (quantization-aware training, fine-tuned with fake-quant nodes)
@@ -345,6 +377,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             acc_qat = evaluate(model_qat, X_test, y_test, num_classes=num_classes, device="cpu")
             acc_qat_list.append(acc_qat)
             f1_qat_list.append(f1_eval(model_qat, X_test, y_test, num_classes=num_classes, device="cpu"))
+            bal_qat_list.append(balanced_accuracy_eval(model_qat, X_test, y_test, num_classes=num_classes, device="cpu"))
             if model_dir and acc_qat > best_acc_qat:
                 best_acc_qat = acc_qat
                 best_model_qat = model_qat
@@ -352,6 +385,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             print(f"[warn] QAT failed: {e}")
             acc_qat_list.append(None)
             f1_qat_list.append(None)
+            bal_qat_list.append(None)
             model_qat = None
 
         # Mixed precision (fc1 and out in float32, inner layers int8)
@@ -362,10 +396,12 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
                 output_precision["mixed"] = output_divergence(model_float, model_mixed, X_test, num_classes)
             acc_mixed_list.append(evaluate(model_mixed, X_test, y_test, num_classes=num_classes, device="cpu"))
             f1_mixed_list.append(f1_eval(model_mixed, X_test, y_test, num_classes=num_classes, device="cpu"))
+            bal_mixed_list.append(balanced_accuracy_eval(model_mixed, X_test, y_test, num_classes=num_classes, device="cpu"))
         except Exception as e:
             print(f"[warn] Mixed precision failed: {e}")
             acc_mixed_list.append(None)
             f1_mixed_list.append(None)
+            bal_mixed_list.append(None)
             model_mixed = None
 
         if size_u is None:
@@ -391,6 +427,30 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
                     for _ in range(n_runs):
                         _ = m_cpu(X_cpu)
                 return (time.perf_counter() - t0) / n_runs * 1000
+            def _resource_profile(m, size_bytes):
+                params = sum(p.numel() for p in m.parameters())
+                try:
+                    import torchinfo as _torchinfo
+                    info = _torchinfo.summary(
+                        m.cpu(), input_size=(1, X_test.shape[1]), verbose=0
+                    )
+                    flops = int(info.total_mult_adds)
+                    activation_kb = float(info.total_output_bytes / 1024)
+                except Exception:
+                    flops = None
+                    activation_kb = None
+                latency_ms = _time_ms(m)
+                return {
+                    "params": params,
+                    "flops_per_sample": flops,
+                    "model_size_bytes": size_bytes,
+                    "model_size_kb": round(size_bytes / 1024, 2),
+                    "activation_mem_kb": round(activation_kb, 2) if activation_kb is not None else None,
+                    "latency_ms_full_test": latency_ms,
+                    "latency_us_per_sample": round(latency_ms * 1000 / n_test, 4),
+                    "latency_runs": 30,
+                    "latency_warmup_runs": 1,
+                }
             try:
                 import torchinfo as _torchinfo
                 _tinfo = _torchinfo.summary(model_u, input_size=(1, X_test.shape[1]), verbose=0)
@@ -408,6 +468,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
                 "flops_per_sample": flops_per_sample,
                 "activation_kb":    activation_kb,
             }
+            resource_profiles["dendritic"] = _resource_profile(model_u, model_u.size_bytes())
 
         mlp = MLPBaseline(
             input_dim=X_train.shape[1],
@@ -424,16 +485,19 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             best_acc_mlp = acc_mlp_list[-1]
             best_state_mlp = {k: v.cpu().clone() for k, v in mlp.state_dict().items()}
         f1_mlp_list.append(f1_eval(mlp, X_test, y_test, num_classes=num_classes))
+        bal_mlp_u_list.append(balanced_accuracy_eval(mlp, X_test, y_test, num_classes=num_classes))
 
         if size_mlp_u is None:
             size_mlp_u = mlp.size_bytes()
+            resource_profiles["mlp"] = _resource_profile(mlp, size_mlp_u)
 
         mlp_results = compress_all_methods(mlp, X_train, y_train, X_test, y_test,
                                            num_classes, fine_tune_epochs)
         for m in COMPARISON_METHODS:
-            acc, f1, size = mlp_results[m]
+            acc, f1, bal, size = mlp_results[m]
             mlp_acc[m].append(acc)
             mlp_f1[m].append(f1)
+            mlp_bal[m].append(bal)
             if mlp_size.get(m) is None and size is not None:
                 mlp_size[m] = size
         # kept for backward compatibility with existing "mlp_compressed" reporting (= Snowflake)
@@ -461,15 +525,18 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             branch_diversity_control = layer_matched_control_spread(lm)
         lm_acc_u_list.append(evaluate(lm, X_test, y_test, num_classes=num_classes))
         lm_f1_u_list.append(f1_eval(lm, X_test, y_test, num_classes=num_classes))
+        lm_bal_u_list.append(balanced_accuracy_eval(lm, X_test, y_test, num_classes=num_classes))
         if size_lm_u is None:
             size_lm_u = lm.size_bytes()
+            resource_profiles["layer_matched"] = _resource_profile(lm, size_lm_u)
 
         lm_results = compress_all_methods(lm, X_train, y_train, X_test, y_test,
                                           num_classes, fine_tune_epochs)
         for m in COMPARISON_METHODS:
-            acc, f1, size = lm_results[m]
+            acc, f1, bal, size = lm_results[m]
             lm_acc[m].append(acc)
             lm_f1[m].append(f1)
+            lm_bal[m].append(bal)
             if lm_size.get(m) is None and size is not None:
                 lm_size[m] = size
 
@@ -483,17 +550,20 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
                   verbose=True, label=f"{lit_baseline_label} seed={seed}")
             lit_acc_u_list.append(evaluate(lit, X_test, y_test, num_classes=num_classes))
             lit_f1_u_list.append(f1_eval(lit, X_test, y_test, num_classes=num_classes))
+            lit_bal_u_list.append(balanced_accuracy_eval(lit, X_test, y_test, num_classes=num_classes))
             if size_lit_u is None:
                 size_lit_u = lit.size_bytes()
+                resource_profiles["literature"] = _resource_profile(lit, size_lit_u)
 
             lit_mixed_layers = getattr(type(lit), "MIXED_LAYERS", ("fc1", "out"))
             lit_results = compress_all_methods(lit, X_train, y_train, X_test, y_test,
                                                num_classes, fine_tune_epochs,
                                                mixed_layers=lit_mixed_layers)
             for m in COMPARISON_METHODS:
-                acc, f1, size = lit_results[m]
+                acc, f1, bal, size = lit_results[m]
                 lit_acc[m].append(acc)
                 lit_f1[m].append(f1)
+                lit_bal[m].append(bal)
                 if lit_size.get(m) is None and size is not None:
                     lit_size[m] = size
 
@@ -618,6 +688,32 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "mlp_baseline":        _std(f1_mlp_list),
             "mlp_compressed":      _std(f1_mlp_c_list),
         },
+        "balanced_accuracy": {
+            "uncompressed":        _mean(bal_u_list),
+            "compressed":          _mean(bal_c_list),
+            "compressed_global":   _mean(bal_global_list),
+            "compressed_dynamic":  _mean(bal_dynamic_list),
+            "compressed_static":   _mean_safe(bal_static_list),
+            "compressed_snowflake_static": _mean_safe(bal_snowflakestatic_list),
+            "compressed_perchan":  _mean_safe(bal_perchan_list),
+            "compressed_qat":      _mean_safe(bal_qat_list),
+            "compressed_mixed":    _mean_safe(bal_mixed_list),
+            "mlp_baseline":        _mean(bal_mlp_u_list),
+            "mlp_compressed":      _mean_safe(mlp_bal["snowflake"]),
+        },
+        "balanced_accuracy_std": {
+            "uncompressed":        _std(bal_u_list),
+            "compressed":          _std(bal_c_list),
+            "compressed_global":   _std(bal_global_list),
+            "compressed_dynamic":  _std(bal_dynamic_list),
+            "compressed_static":   _std_safe(bal_static_list),
+            "compressed_snowflake_static": _std_safe(bal_snowflakestatic_list),
+            "compressed_perchan":  _std_safe(bal_perchan_list),
+            "compressed_qat":      _std_safe(bal_qat_list),
+            "compressed_mixed":    _std_safe(bal_mixed_list),
+            "mlp_baseline":        _std(bal_mlp_u_list),
+            "mlp_compressed":      _std_safe(mlp_bal["snowflake"]),
+        },
         "sizes": {
             "uncompressed":       size_u,
             "compressed":         size_c,
@@ -642,9 +738,20 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
                 "accuracy":     {m: _mean_safe(mlp_acc[m]) for m in COMPARISON_METHODS},
                 "accuracy_std": {m: _std_safe(mlp_acc[m])  for m in COMPARISON_METHODS},
                 "f1":           {m: _mean_safe(mlp_f1[m])  for m in COMPARISON_METHODS},
+                "balanced_accuracy_uncompressed": _mean(bal_mlp_u_list),
+                "ci_95_balanced_accuracy_uncompressed": _ci95(bal_mlp_u_list),
+                "balanced_accuracy": {m: _mean_safe(mlp_bal[m]) for m in COMPARISON_METHODS},
+                "balanced_accuracy_std": {m: _std_safe(mlp_bal[m]) for m in COMPARISON_METHODS},
+                "ci_95_balanced_accuracy": {m: _ci95_safe(mlp_bal[m]) for m in COMPARISON_METHODS},
+                "tost_balanced_accuracy": {m: tost_paired(bal_mlp_u_list, mlp_bal[m]) for m in COMPARISON_METHODS},
+                "per_seed_balanced_accuracy": {
+                    "uncompressed": bal_mlp_u_list,
+                    **{m: mlp_bal[m] for m in COMPARISON_METHODS},
+                },
                 "ci_95":        {m: _ci95_safe(mlp_acc[m]) for m in COMPARISON_METHODS},
                 "tost":         {m: tost_paired(acc_mlp_list, mlp_acc[m]) for m in COMPARISON_METHODS},
                 "sizes":        mlp_size,
+                "resource_profile": resource_profiles.get("mlp"),
             },
             "layer_matched": {
                 "accuracy_uncompressed": _mean(lm_acc_u_list),
@@ -654,9 +761,20 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
                 "accuracy":     {m: _mean_safe(lm_acc[m]) for m in COMPARISON_METHODS},
                 "accuracy_std": {m: _std_safe(lm_acc[m])  for m in COMPARISON_METHODS},
                 "f1":           {m: _mean_safe(lm_f1[m])  for m in COMPARISON_METHODS},
+                "balanced_accuracy_uncompressed": _mean(lm_bal_u_list),
+                "ci_95_balanced_accuracy_uncompressed": _ci95(lm_bal_u_list),
+                "balanced_accuracy": {m: _mean_safe(lm_bal[m]) for m in COMPARISON_METHODS},
+                "balanced_accuracy_std": {m: _std_safe(lm_bal[m]) for m in COMPARISON_METHODS},
+                "ci_95_balanced_accuracy": {m: _ci95_safe(lm_bal[m]) for m in COMPARISON_METHODS},
+                "tost_balanced_accuracy": {m: tost_paired(lm_bal_u_list, lm_bal[m]) for m in COMPARISON_METHODS},
+                "per_seed_balanced_accuracy": {
+                    "uncompressed": lm_bal_u_list,
+                    **{m: lm_bal[m] for m in COMPARISON_METHODS},
+                },
                 "ci_95":        {m: _ci95_safe(lm_acc[m]) for m in COMPARISON_METHODS},
                 "tost":         {m: tost_paired(lm_acc_u_list, lm_acc[m]) for m in COMPARISON_METHODS},
                 "sizes":        lm_size,
+                "resource_profile": resource_profiles.get("layer_matched"),
             },
             # Dataset-specific literature baseline (e.g. ECGCNNBaseline,
             # CompactHARMLP) -- not shape-matched to Dendritic; None if the
@@ -670,9 +788,20 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
                 "accuracy":     {m: _mean_safe(lit_acc[m]) for m in COMPARISON_METHODS},
                 "accuracy_std": {m: _std_safe(lit_acc[m])  for m in COMPARISON_METHODS},
                 "f1":           {m: _mean_safe(lit_f1[m])  for m in COMPARISON_METHODS},
+                "balanced_accuracy_uncompressed": _mean(lit_bal_u_list),
+                "ci_95_balanced_accuracy_uncompressed": _ci95(lit_bal_u_list),
+                "balanced_accuracy": {m: _mean_safe(lit_bal[m]) for m in COMPARISON_METHODS},
+                "balanced_accuracy_std": {m: _std_safe(lit_bal[m]) for m in COMPARISON_METHODS},
+                "ci_95_balanced_accuracy": {m: _ci95_safe(lit_bal[m]) for m in COMPARISON_METHODS},
+                "tost_balanced_accuracy": {m: tost_paired(lit_bal_u_list, lit_bal[m]) for m in COMPARISON_METHODS},
+                "per_seed_balanced_accuracy": {
+                    "uncompressed": lit_bal_u_list,
+                    **{m: lit_bal[m] for m in COMPARISON_METHODS},
+                },
                 "ci_95":        {m: _ci95_safe(lit_acc[m]) for m in COMPARISON_METHODS},
                 "tost":         {m: tost_paired(lit_acc_u_list, lit_acc[m]) for m in COMPARISON_METHODS},
                 "sizes":        lit_size,
+                "resource_profile": resource_profiles.get("literature"),
             } if lit_baseline_fn is not None else None,
         },
         "num_seeds":        n,
@@ -709,6 +838,15 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "f1_compressed_perchan":  f1_perchan_list,
             "f1_compressed_qat":      f1_qat_list,
             "f1_compressed_mixed":    f1_mixed_list,
+            "bal_uncompressed":       bal_u_list,
+            "bal_compressed":         bal_c_list,
+            "bal_compressed_global":  bal_global_list,
+            "bal_compressed_dynamic": bal_dynamic_list,
+            "bal_compressed_static":  bal_static_list,
+            "bal_compressed_snowflake_static": bal_snowflakestatic_list,
+            "bal_compressed_perchan": bal_perchan_list,
+            "bal_compressed_qat":     bal_qat_list,
+            "bal_compressed_mixed":   bal_mixed_list,
         },
         "inference_time_uncompressed_ms": inference_times["uncompressed_ms"] if inference_times else None,
         "inference_time_compressed_ms":   inference_times["compressed_ms"]   if inference_times else None,
@@ -716,6 +854,7 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
         "inference_time_static_ms":       inference_times.get("static_ms")   if inference_times else None,
         "inference_time_mlp_ms":          inference_times["mlp_ms"]          if inference_times else None,
         "edge_profile":                   edge_profile,
+        "resource_profiles":             resource_profiles,
         "ci_95": {
             "uncompressed":       _ci95(acc_u_list),
             "compressed":         _ci95(acc_c_list),
@@ -761,5 +900,26 @@ def run_experiment(get_data, num_classes, class_names, epochs, seeds, fine_tune_
             "compressed_perchan": tost_paired(f1_u_list, f1_perchan_list),
             "compressed_qat":     tost_paired(f1_u_list, f1_qat_list),
             "compressed_mixed":   tost_paired(f1_u_list, f1_mixed_list),
+        },
+        "ci_95_balanced_accuracy": {
+            "uncompressed":       _ci95(bal_u_list),
+            "compressed":         _ci95(bal_c_list),
+            "compressed_global":  _ci95(bal_global_list),
+            "compressed_dynamic": _ci95(bal_dynamic_list),
+            "compressed_static":  _ci95_safe(bal_static_list),
+            "compressed_snowflake_static": _ci95_safe(bal_snowflakestatic_list),
+            "compressed_perchan": _ci95_safe(bal_perchan_list),
+            "compressed_qat":     _ci95_safe(bal_qat_list),
+            "compressed_mixed":   _ci95_safe(bal_mixed_list),
+        },
+        "tost_balanced_accuracy": {
+            "compressed":         tost_paired(bal_u_list, bal_c_list),
+            "compressed_global":  tost_paired(bal_u_list, bal_global_list),
+            "compressed_dynamic": tost_paired(bal_u_list, bal_dynamic_list),
+            "compressed_static":  tost_paired(bal_u_list, bal_static_list),
+            "compressed_snowflake_static": tost_paired(bal_u_list, bal_snowflakestatic_list),
+            "compressed_perchan": tost_paired(bal_u_list, bal_perchan_list),
+            "compressed_qat":     tost_paired(bal_u_list, bal_qat_list),
+            "compressed_mixed":   tost_paired(bal_u_list, bal_mixed_list),
         },
     }
