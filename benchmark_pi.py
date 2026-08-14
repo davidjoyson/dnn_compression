@@ -21,6 +21,9 @@ import argparse
 import ctypes
 import gc
 import os
+import platform
+import re
+import subprocess
 import time
 
 import torch
@@ -69,15 +72,16 @@ def make_model(input_dim, num_classes):
                             hidden_per_branch=8, num_classes=num_classes)
 
 
-def mem_rss_mb():
+def mem_rss_mb(trim=True):
     # Force glibc to release freed arena pages back to the OS first, so this
     # reads live usage instead of a high-water mark left over from an earlier
     # method's transient allocations (e.g. FX calibration forward passes).
-    gc.collect()
-    try:
-        ctypes.CDLL(None).malloc_trim(0)
-    except (OSError, AttributeError):
-        pass
+    if trim:
+        gc.collect()
+        try:
+            ctypes.CDLL(None).malloc_trim(0)
+        except (OSError, AttributeError, TypeError):
+            pass
     try:
         with open("/proc/self/status") as f:
             for line in f:
@@ -86,6 +90,87 @@ def mem_rss_mb():
     except OSError:
         return float("nan")
     return float("nan")
+
+
+def measure_peak_rss(model, X, n_runs=20):
+    """Observed per-method RSS peak in a separate, untimed inference loop."""
+    before = mem_rss_mb(trim=True)
+    peak = before
+    model.eval()
+    with torch.no_grad():
+        for _ in range(n_runs):
+            model(X)
+            peak = max(peak, mem_rss_mb(trim=False))
+    return before, peak, peak - before
+
+
+_TEMP_RE = re.compile(r"temp=([\d.]+)")
+
+
+def read_temperature_c():
+    try:
+        result = subprocess.run(
+            ["vcgencmd", "measure_temp"], capture_output=True,
+            text=True, timeout=3, check=False,
+        )
+        match = _TEMP_RE.search(result.stdout)
+        return float(match.group(1)) if match else float("nan")
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return float("nan")
+
+
+def read_cpu_metadata():
+    governors, frequencies = set(), []
+    cpu_root = "/sys/devices/system/cpu"
+    try:
+        cpu_names = sorted(name for name in os.listdir(cpu_root)
+                           if re.fullmatch(r"cpu\d+", name))
+    except OSError:
+        cpu_names = []
+    for cpu_name in cpu_names:
+        cpufreq = os.path.join(cpu_root, cpu_name, "cpufreq")
+        try:
+            with open(os.path.join(cpufreq, "scaling_governor")) as f:
+                governors.add(f.read().strip())
+        except OSError:
+            pass
+        try:
+            with open(os.path.join(cpufreq, "scaling_cur_freq")) as f:
+                frequencies.append(int(f.read().strip()) / 1000)
+        except (OSError, ValueError):
+            pass
+    return {
+        "governor": ",".join(sorted(governors)) or "unknown",
+        "frequency_mhz_min": min(frequencies) if frequencies else None,
+        "frequency_mhz_max": max(frequencies) if frequencies else None,
+    }
+
+
+def configure_cpu(threads, affinity, set_governor):
+    torch.set_num_threads(threads)
+    try:
+        torch.set_num_interop_threads(1)
+    except RuntimeError:
+        pass
+    if affinity:
+        cpus = {int(cpu.strip()) for cpu in affinity.split(",") if cpu.strip()}
+        try:
+            os.sched_setaffinity(0, cpus)
+        except (AttributeError, OSError) as exc:
+            print(f"[warn] Could not set CPU affinity to {sorted(cpus)}: {exc}")
+    if set_governor:
+        changed = 0
+        for path in (f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_governor"
+                     for i in range(os.cpu_count() or 1)):
+            try:
+                with open(path, "w") as f:
+                    f.write(set_governor)
+                changed += 1
+            except OSError:
+                pass
+        if not changed:
+            print(f"[warn] Could not set CPU governor to {set_governor!r}; "
+                  "run with suitable OS permissions or record the existing governor.")
 
 
 def run_benchmark(model, X, n_warmup=50, n_runs=500):
@@ -114,13 +199,23 @@ def global_size_bytes(compressed):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", choices=list(DATASETS), default=None,
-                        help="Dataset to benchmark. Omit to run all 4.")
+                        help="Dataset to benchmark. Omit to run all configured datasets.")
     parser.add_argument("--model-dir", default=None,
                         help="Path to saved models dir. Defaults to models/<dataset>.")
     parser.add_argument("--batch-size", type=int, default=-1,
                         help="Samples per forward pass. -1 = all test samples (default).")
     parser.add_argument("--runs",       type=int, default=500)
     parser.add_argument("--warmup",     type=int, default=50)
+    parser.add_argument("--threads", type=int, default=1,
+                        help="PyTorch intra-op threads (default: 1 for reproducibility).")
+    parser.add_argument("--cpu-affinity", default=None,
+                        help="Comma-separated logical CPUs, e.g. 0 or 0,1. Linux only.")
+    parser.add_argument("--set-governor", choices=["performance", "powersave"], default=None,
+                        help="Attempt to set the CPU governor; usually requires root.")
+    parser.add_argument("--memory-runs", type=int, default=20,
+                        help="Separate forwards used to observe peak RSS (default: 20).")
+    parser.add_argument("--temperature", action="store_true",
+                        help="Record vcgencmd temperature immediately before/after each method.")
     parser.add_argument("--skip-qat",   action="store_true",
                         help="Skip QAT (trains for --qat-epochs, slow on Pi).")
     parser.add_argument("--qat-only",   action="store_true",
@@ -130,6 +225,10 @@ def main():
                         help="CSV file to append results to (default: results_<dataset>.csv).")
     args = parser.parse_args()
 
+    if args.threads < 1 or args.runs < 1 or args.warmup < 0 or args.memory_runs < 1:
+        parser.error("threads/runs/memory-runs must be positive and warmup non-negative")
+    configure_cpu(args.threads, args.cpu_affinity, args.set_governor)
+
     datasets = [args.dataset] if args.dataset else list(DATASETS)
     for dataset in datasets:
         args.dataset = dataset
@@ -138,6 +237,15 @@ def main():
 
 def _run(args):
     input_dim, num_classes = DATASETS[args.dataset]
+    cpu_meta = read_cpu_metadata()
+    affinity = (sorted(os.sched_getaffinity(0))
+                if hasattr(os, "sched_getaffinity") else [])
+    print("Benchmark environment:")
+    print(f"  platform={platform.platform()}  torch={torch.__version__}  backend={BACKEND}")
+    print(f"  threads={torch.get_num_threads()}  affinity={affinity or 'unavailable'}")
+    print(f"  governor={cpu_meta['governor']}  "
+          f"frequency={cpu_meta['frequency_mhz_min'] or '?'}-"
+          f"{cpu_meta['frequency_mhz_max'] or '?'} MHz\n")
 
     model_dir = args.model_dir or os.path.join("models", args.dataset)
 
@@ -151,7 +259,7 @@ def _run(args):
     y = y_all if args.batch_size == -1 else y_all[:args.batch_size]
     print(f"Loaded {len(X_te_np)} test samples — using {len(X)}\n")
 
-    rows = []  # (name, lat_ms, std_ms, throughput, size_bytes, acc, f1)
+    rows = []
 
     def fresh():
         """Return a model with trained weights if model-dir given, else random."""
@@ -181,15 +289,31 @@ def _run(args):
         return acc, sum(f1s) / len(f1s)
 
     def bench(name, model_infer, size_bytes):
+        temp_before = read_temperature_c() if args.temperature else float("nan")
         lat, std, tput = run_benchmark(model_infer, X, args.warmup, args.runs)
         acc, f1 = evaluate(model_infer)
-        mem = mem_rss_mb()
-        rows.append((name, lat, std, tput, size_bytes, acc, f1, mem))
+        rss_before, rss_peak, rss_delta = measure_peak_rss(
+            model_infer, X, args.memory_runs
+        )
+        temp_after = read_temperature_c() if args.temperature else float("nan")
+        rows.append({
+            "method": name, "latency_ms": lat, "std_ms": std,
+            "throughput": tput, "size_bytes": size_bytes,
+            "acc": acc, "f1": f1, "rss_mb": rss_peak,
+            "rss_before_mb": rss_before, "rss_peak_mb": rss_peak,
+            "rss_delta_mb": rss_delta, "temp_before_c": temp_before,
+            "temp_after_c": temp_after,
+        })
         print(f"  ok  {name}")
 
     def skip(name, reason):
         nan = float("nan")
-        rows.append((name, nan, nan, nan, 0, nan, nan, nan))
+        rows.append({
+            "method": name, "latency_ms": nan, "std_ms": nan,
+            "throughput": nan, "size_bytes": 0, "acc": nan, "f1": nan,
+            "rss_mb": nan, "rss_before_mb": nan, "rss_peak_mb": nan,
+            "rss_delta_mb": nan, "temp_before_c": nan, "temp_after_c": nan,
+        })
         print(f"  --  {name}  [{reason}]")
 
     # ── 1. Float32 ─────────────────────────────────────────────────────────
@@ -266,7 +390,7 @@ def _run(args):
             skip("QAT int8 (FX)", str(e)[:72])
 
     # ── Print table ─────────────────────────────────────────────────────────
-    f32_lat = rows[0][1]
+    f32_lat = rows[0]["latency_ms"]
 
     W = 107
     print(f"\n{'='*W}")
@@ -274,9 +398,12 @@ def _run(args):
           f"n={args.runs}  |  backend={BACKEND}")
     print(f"{'='*W}")
     print(f"{'Method':<30} {'Latency':>9} {'+-std':>7} {'Throughput':>12} "
-          f"{'Size':>9} {'Speedup':>8} {'Compress':>8} {'Acc':>6} {'F1':>6} {'RSS':>7}")
+          f"{'Size':>9} {'Speedup':>8} {'Compress':>8} {'Acc':>6} {'F1':>6} {'PeakRSS':>8}")
     print(f"{'-'*W}")
-    for name, lat, std, tput, size, acc, f1, mem in rows:
+    for row in rows:
+        name, lat, std = row["method"], row["latency_ms"], row["std_ms"]
+        tput, size = row["throughput"], row["size_bytes"]
+        acc, f1, mem = row["acc"], row["f1"], row["rss_peak_mb"]
         if lat != lat:  # nan = failed/skipped
             print(f"{name:<30} {'N/A':>9}")
             continue
@@ -292,26 +419,58 @@ def _run(args):
     # ── Save CSV ─────────────────────────────────────────────────────────────
     import csv
     csv_path = args.output or os.path.join("outputs", f"results_{args.dataset}.csv")
-    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+    output_dir = os.path.dirname(csv_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    fieldnames = [
+        "schema_version", "dataset", "backend", "batch", "method",
+        "latency_ms", "std_ms", "throughput", "size_bytes", "speedup",
+        "compression", "acc", "f1", "rss_mb", "rss_before_mb",
+        "rss_peak_mb", "rss_delta_mb", "temp_before_c", "temp_after_c",
+        "warmup_runs", "timed_runs", "memory_runs", "torch_threads",
+        "cpu_affinity", "cpu_governor", "cpu_freq_min_mhz",
+        "cpu_freq_max_mhz", "torch_version", "platform",
+    ]
+    if os.path.exists(csv_path):
+        with open(csv_path, newline="") as existing:
+            existing_header = next(csv.reader(existing), [])
+        if existing_header != fieldnames:
+            stem, ext = os.path.splitext(csv_path)
+            csv_path = f"{stem}_v2{ext or '.csv'}"
+            print(f"[warn] Existing CSV uses the old schema; writing {csv_path} instead.")
     write_header = not os.path.exists(csv_path)
     with open(csv_path, "a", newline="") as f:
-        w = csv.writer(f)
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         if write_header:
-            w.writerow(["dataset", "backend", "batch", "method", "latency_ms", "std_ms",
-                        "throughput", "size_bytes", "speedup", "compression", "acc", "f1", "rss_mb"])
-        for name, lat, std, tput, size, acc, f1, mem in rows:
-            speedup  = f32_lat / lat if lat == lat else ""
-            compress = round(f32_size / size, 2) if size else ""
-            w.writerow([args.dataset, BACKEND, args.batch_size, name,
-                        round(lat, 4) if lat == lat else "",
-                        round(std, 4) if std == std else "",
-                        round(tput, 1) if tput == tput else "",
-                        size,
-                        round(speedup, 4) if speedup != "" else "",
-                        compress,
-                        round(acc, 4) if acc == acc else "",
-                        round(f1, 4) if f1 == f1 else "",
-                        round(mem, 1) if mem == mem else ""])
+            writer.writeheader()
+        for row in rows:
+            lat, size = row["latency_ms"], row["size_bytes"]
+            record = {
+                "schema_version": 2, "dataset": args.dataset, "backend": BACKEND,
+                "batch": args.batch_size, "method": row["method"],
+                "latency_ms": round(lat, 4) if lat == lat else "",
+                "std_ms": round(row["std_ms"], 4) if row["std_ms"] == row["std_ms"] else "",
+                "throughput": round(row["throughput"], 1) if row["throughput"] == row["throughput"] else "",
+                "size_bytes": size,
+                "speedup": round(f32_lat / lat, 4) if lat == lat else "",
+                "compression": round(f32_size / size, 2) if size else "",
+                "acc": round(row["acc"], 4) if row["acc"] == row["acc"] else "",
+                "f1": round(row["f1"], 4) if row["f1"] == row["f1"] else "",
+                "rss_mb": round(row["rss_peak_mb"], 1) if row["rss_peak_mb"] == row["rss_peak_mb"] else "",
+                "rss_before_mb": round(row["rss_before_mb"], 1) if row["rss_before_mb"] == row["rss_before_mb"] else "",
+                "rss_peak_mb": round(row["rss_peak_mb"], 1) if row["rss_peak_mb"] == row["rss_peak_mb"] else "",
+                "rss_delta_mb": round(row["rss_delta_mb"], 1) if row["rss_delta_mb"] == row["rss_delta_mb"] else "",
+                "temp_before_c": row["temp_before_c"] if row["temp_before_c"] == row["temp_before_c"] else "",
+                "temp_after_c": row["temp_after_c"] if row["temp_after_c"] == row["temp_after_c"] else "",
+                "warmup_runs": args.warmup, "timed_runs": args.runs,
+                "memory_runs": args.memory_runs, "torch_threads": torch.get_num_threads(),
+                "cpu_affinity": ",".join(map(str, affinity)),
+                "cpu_governor": cpu_meta["governor"],
+                "cpu_freq_min_mhz": cpu_meta["frequency_mhz_min"] or "",
+                "cpu_freq_max_mhz": cpu_meta["frequency_mhz_max"] or "",
+                "torch_version": torch.__version__, "platform": platform.platform(),
+            }
+            writer.writerow(record)
     print(f"Results saved to {csv_path}")
 
 
