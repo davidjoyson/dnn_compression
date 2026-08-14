@@ -59,6 +59,7 @@ class _Tee:
 # Same DendriticNetwork shape used for the main per-dataset experiments
 # (base_experiment.py), so ablation results are comparable to the main results.
 _ABLATION_CONFIG = {"h1": 64, "h2": 32, "branches": 8, "hidden_per_branch": 8}
+_ARCH_ABLATION_SEEDS = (42, 0, 7)
 
 _ABLATION_DATASETS = {
     "ecg":  (lambda: load_ecg_patient_split(balance=True), 5),
@@ -83,6 +84,11 @@ _ARCH_ABLATION_SWEEPS = {
 
 def _run_ablation(results, timings, epochs, seeds):
     print("\n=== Ablation Study ===\n")
+    # The factorized sweep has 12 configurations across two datasets. Keep it
+    # exploratory and computationally bounded; the main comparisons retain the
+    # full CLI seed set used for confirmatory statistics.
+    seeds = _ARCH_ABLATION_SEEDS
+    print(f"  architecture-ablation seeds: {list(seeds)}")
     t0 = time.time()
     out = {}
     for name, (loader, num_classes) in _ABLATION_DATASETS.items():
@@ -159,7 +165,9 @@ def main():
     parser.add_argument("--fine-tune-epochs", type=int, default=3,
                         help="Post-quantization fine-tuning epochs (default: 3)")
     parser.add_argument("--seeds", type=int, nargs="+", default=list(SEEDS),
-                        help=f"Random seeds to average over (default: {list(SEEDS)})")
+                        help=(f"Random seeds for main/component/regularization runs "
+                              f"(default: {list(SEEDS)}). Architecture ablation "
+                              f"uses fixed seeds {list(_ARCH_ABLATION_SEEDS)}."))
     parser.add_argument("--arch", action="store_true", help="Print model architectures and exit")
     parser.add_argument(
         "--replot", nargs="+", metavar="RUN_DIR",
