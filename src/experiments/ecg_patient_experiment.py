@@ -27,4 +27,5 @@ def run_ecg_patient(epochs=50, seeds=(42,), fine_tune_epochs=3, model_dir=None):
         model_dir=model_dir,
         lit_baseline_fn=lambda: ECGCNNBaseline(num_classes=5),
         lit_baseline_label="ECG-CNN",
+        lit_baseline_max_seeds=3,
     )

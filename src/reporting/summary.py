@@ -388,7 +388,8 @@ def print_summary(results, timings):
                 if not mdl:
                     continue
                 au = to_float(mdl.get("accuracy_uncompressed", float("nan")))
-                print(f"    {model_label}: uncompressed={au:.4f}")
+                model_n = mdl.get("num_seeds", n_seeds)
+                print(f"    {model_label} (n={model_n}): uncompressed={au:.4f}")
                 for key, lbl in _MC_LABELS:
                     acc = to_float(mdl.get("accuracy", {}).get(key, float("nan")))
                     if math.isnan(acc):
