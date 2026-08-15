@@ -217,7 +217,9 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     log_path = os.path.join(run_dir, "run.log")
-    _log_fh = open(log_path, "w", encoding="utf-8", buffering=1)
+    # UTF-8 with BOM keeps Unicode labels readable in Windows PowerShell and
+    # other legacy-code-page-aware viewers while remaining standard UTF-8.
+    _log_fh = open(log_path, "w", encoding="utf-8-sig", buffering=1)
     sys.stdout = _Tee(sys.__stdout__, _log_fh)
     sys.stderr = _Tee(sys.__stderr__, _log_fh)
 

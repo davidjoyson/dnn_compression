@@ -80,7 +80,7 @@ def save_metrics_csv(results, run_dir):
     if not rows:
         return
     csv_path = os.path.join(run_dir, "metrics.csv")
-    with open(csv_path, "w", newline="") as f:
+    with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
@@ -533,7 +533,7 @@ def save_per_seed_csv(results, run_dir):
     if not rows:
         return
     csv_path = os.path.join(run_dir, "per_seed_metrics.csv")
-    with open(csv_path, "w", newline="") as f:
+    with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
@@ -550,6 +550,6 @@ def save_summary_txt(results, timings, run_dir):
     finally:
         sys.stdout = old_stdout
     txt_path = os.path.join(run_dir, "summary.txt")
-    with open(txt_path, "w", encoding="utf-8") as f:
+    with open(txt_path, "w", encoding="utf-8-sig") as f:
         f.write(buf.getvalue())
     print(f"  Summary saved  -> {txt_path}")
