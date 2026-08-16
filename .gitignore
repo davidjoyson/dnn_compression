@@ -3,6 +3,12 @@
 /pi_data/
 /benchmark_pi_output/
 
+# Raspberry Pi local diagnostics and model checkpoints
+/diag_ecg_mem.py
+/diag_hapt_mem.py
+/models/checkpoint_backup_*/
+/models/incart/
+
 # CSV results (outputs/ is already ignored)
 *.csv
 *.xlsx
