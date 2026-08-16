@@ -14,7 +14,7 @@ from src.plots.plot_pi_benchmark import (
     plot_pi_batch_comparison, plot_pi_pareto,
 )
 
-DATASETS = ["har", "ecg", "hapt", "eeg"]
+DATASETS = ["ecg", "incart", "hapt"]
 
 if __name__ == "__main__":
     dataframes = {}

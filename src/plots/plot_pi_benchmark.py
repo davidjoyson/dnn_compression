@@ -13,9 +13,9 @@ _METHODS = [
     ("Snowflake+Static int8",      "Snowflake+Static (int8)",   METHOD_COLORS["Snowflake+Static (int8)"]),
 ]
 
-_DATASET_ORDER = ["har", "ecg", "hapt"]
-_DATASET_LABELS = {"har": "HAR", "ecg": "ECG", "hapt": "HAPT", "eeg": "EEG"}
-_DATASET_COLORS = {"har": PALETTE[0], "ecg": PALETTE[1], "hapt": PALETTE[2], "eeg": PALETTE[3]}
+_DATASET_ORDER = ["ecg", "incart", "hapt"]
+_DATASET_LABELS = {"ecg": "MIT-BIH ECG", "incart": "INCART ECG", "hapt": "HAPT"}
+_DATASET_COLORS = {"ecg": PALETTE[1], "incart": PALETTE[0], "hapt": PALETTE[2]}
 
 # Fixed color assignment for all 10 methods in the CSV, reused across every
 # plot in this module -- extends METHOD_COLORS with 3 methods that have no

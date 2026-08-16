@@ -47,14 +47,21 @@ from src.compression.compression_pipeline import (
 )
 from src.loaders.load_ecg_patient_split import load_ecg_patient_split
 from src.loaders.load_hapt import load_hapt
+from src.loaders.load_incart import load_incart
 
 DATASETS = {
     "ecg":  (187,  5),
+    "incart": (187, 4),
     "hapt": (561,  12),
 }
 
 LOADERS = {
     "ecg":  load_ecg_patient_split,
+    # The shared benchmark expects train/test arrays only; INCART's loader
+    # returns a separate validation partition by default.
+    "incart": lambda balance: load_incart(
+        balance=balance, return_validation=False
+    ),
     "hapt": load_hapt,
 }
 
@@ -62,6 +69,7 @@ LOADERS = {
 # 2026-07-27 entries) -- ECG is balance=True, HAPT is balance=False.
 BALANCE = {
     "ecg":  True,
+    "incart": True,
     "hapt": False,
 }
 
