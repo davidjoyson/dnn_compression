@@ -1,0 +1,15 @@
+﻿
+=== Experiment Summary ===
+
+Component Ablation:
+  [ecg]
+    none        : acc=0.8534 +/- 0.0150  mse=nan +/- nan
+    topo_only   : acc=0.3821 +/- 0.1433  mse=nan +/- nan
+    quant_only  : acc=0.8531 +/- 0.0157  mse=nan +/- nan
+    both        : acc=0.3830 +/- 0.1453  mse=nan +/- nan
+  [hapt]
+    none        : acc=0.9301 +/- 0.0037  mse=nan +/- nan
+    topo_only   : acc=0.2355 +/- 0.1242  mse=nan +/- nan
+    quant_only  : acc=0.9299 +/- 0.0038  mse=nan +/- nan
+    both        : acc=0.2300 +/- 0.1232  mse=nan +/- nan
+  Time             : 13226.45 sec
