@@ -17,6 +17,7 @@
 # Figures and outputs
 figures/
 outputs/
+/final_output/
 *.png
 *.jpg
 *.pdf

@@ -24,6 +24,34 @@ explicitly marked as outside the current claims.
 | Sustained thermal test | MIT-BIH ECG checkpoint | Dendritic | All 10 benchmark methods | 5-minute continuous single-sample load per method; 2-second sampling; 60-second cooldown | Not applicable | Temperature rise, peak temperature and sustained throughput | Raspberry Pi 3 Model B; 4 cores; performance governor | Complete; maximum observed temperature 55.8°C; no throttling flag observed before or after the run |
 | Energy / microcontroller | Not assigned | Not assigned | Not assigned | — | — | Energy per inference | External power meter or MCU-class target | Not performed; explicitly outside current claims |
 
+## Main predictive-metric snapshot
+
+| Dataset | Float accuracy (95% CI half-width) | Snowflake accuracy (95% CI half-width) | Float -> Snowflake macro-F1 | Float -> Snowflake balanced accuracy | Float -> Snowflake storage |
+|---|---:|---:|---:|---:|---:|
+| MIT-BIH ECG | 83.71% (+/-1.58 pp) | 86.21% (+/-0.74 pp) | 0.3595 -> 0.3681 | 0.3850 -> 0.3839 | 68,660 -> 17,213 B |
+| HAPT | 92.51% (+/-0.53 pp) | 92.77% (+/-0.40 pp) | 0.8191 -> 0.8267 | 0.8216 -> 0.8278 | 165,328 -> 41,380 B |
+| INCART ECG | 78.44% (+/-1.90 pp) | 79.00% (+/-1.57 pp) | 0.4053 -> 0.4061 | 0.5377 -> 0.5399 | 68,528 -> 17,180 B |
+
+## Baseline and resource snapshot
+
+| Dataset | Matched MLP accuracy | Layer-matched MLP accuracy | Compact baseline accuracy | Dendritic MACs/sample | Activation memory | Desktop Dendritic latency |
+|---|---:|---:|---:|---:|---:|---:|
+| MIT-BIH ECG | 79.06% | 80.69% | ECG 1D-CNN: 67.75% (3 seeds) | 17,165 | 1.35 KB | 0.46 us/sample |
+| HAPT | 93.21% | 93.14% | Compact HAPT MLP: 92.80% | 41,332 | 1.41 KB | 1.56 us/sample |
+| INCART ECG | 76.53% | 76.62% | ECG 1D-CNN: 54.13% (3 seeds) | 17,132 | 1.34 KB | 0.52 us/sample |
+
+## Raspberry Pi metric snapshot
+
+| Dataset | Float32 latency | Static INT8 latency (speedup) | Snowflake+Static latency (speedup) | Float32 peak RSS | Snowflake+Static peak RSS |
+|---|---:|---:|---:|---:|---:|
+| MIT-BIH ECG | 7.95 ms | 4.27 ms (1.86x) | 4.29 ms (1.85x) | 709.4 MB | 364.0 MB |
+| INCART ECG | 8.54 ms | 4.35 ms (1.96x) | 4.36 ms (1.96x) | 449.2 MB | 538.2 MB |
+| HAPT | 8.36 ms | 4.41 ms (1.90x) | 4.34 ms (1.93x) | 384.3 MB | 483.6 MB |
+
+The sustained ECG thermal test recorded 123.2 inferences/s for Float32 and
+230.5 inferences/s for QAT INT8. The maximum observed CPU temperature was
+55.8 degrees C, and `get_throttled=0x0` was observed before and after the run.
+
 ## Completed ablation snapshot
 
 | Finding | MIT-BIH ECG | HAPT |
