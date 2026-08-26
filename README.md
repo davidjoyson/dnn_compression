@@ -1,4 +1,4 @@
-# DNN Compression with Dendritic Networks
+# Snowflake Inspired Compression for Dendritic Neural Networks
 
 This repository evaluates whether a compact, biologically inspired dendritic
 network can retain predictive performance after quantization while reducing
